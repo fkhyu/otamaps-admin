@@ -65,10 +65,11 @@ export default function Editor() {
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      // style: 'mapbox://styles/mapbox/streets-v11',
+      // style: 'mapbox://styles/mapbox/light-v10',
       center: [24.8182, 60.1842],
       zoom: 17,
-      // pitch: 45,
+      // pitch: 60, // Enable 3D perspective
+      bearing: 0,
     });
 
     draw.current = new MapboxDraw({
@@ -94,10 +95,10 @@ export default function Editor() {
         source: 'features',
         filter: ['==', ['get', 'type'], 'wall'],
         paint: {
-          'fill-extrusion-color': '#888',
+          'fill-extrusion-color': '#4a4a4a', // Darker color for better 3D contrast
           'fill-extrusion-height': ['get', 'height'],
           'fill-extrusion-base': 0,
-          'fill-extrusion-opacity': 0.7,
+          'fill-extrusion-opacity': 0.9, // Slightly more opaque for solidity
         },
       });
 
@@ -159,7 +160,6 @@ export default function Editor() {
       });
       marker.on('drag', () => {
         const lngLat = marker.getLngLat();
-        // Directly update the specific corner's coordinates
         const newCoords = [...overlayCoords];
         newCoords[cornerIndex] = [lngLat.lng, lngLat.lat];
         updateOverlay(newCoords);
@@ -202,7 +202,6 @@ export default function Editor() {
     // Animation loop for smooth updates
     const animate = () => {
       if (!isDragging) return;
-      // Update marker positions to match overlayCoords
       markers.forEach((marker, index) => {
         marker.setLngLat(overlayCoords[index]);
       });
@@ -244,11 +243,11 @@ export default function Editor() {
       map.current.removeLayer('overlay');
       map.current.removeSource('overlay');
     }
-  }, [overlayImage, overlayCoords]);
+  }, [overlayImage, overlayCoords, overlayOpacity]);
 
   useEffect(() => {
     if (map.current && map.current.getSource('features')) {
-      ( randomnessmap.current.getSource('features') as mapboxgl.GeoJSONSource).setData(features);
+      (map.current.getSource('features') as mapboxgl.GeoJSONSource).setData(features);
     }
   }, [features]);
 
@@ -256,7 +255,21 @@ export default function Editor() {
     const newFeature = e.features[0];
     if (mode === 'draw_wall' && newFeature.geometry.type === 'LineString') {
       const line = turf.lineString(newFeature.geometry.coordinates);
-      const buffered = turf.buffer(line, wallWidth / 2, { units: 'meters' });
+      // const simplified = turf.simplify(line, { tolerance: 0.0001, highQuality: false });
+      const cleaned = turf.truncate(line, { precision: 10 });
+
+      let buffered: turf.Feature<Polygon>;
+      try {
+        buffered = turf.buffer(cleaned, Math.max(0.1, wallWidth / 2), { units: 'meters' });
+        if (!buffered.geometry || buffered.geometry.type !== 'Polygon') {
+          console.error('Invalid polygon geometry created during buffering');
+          return;
+        }
+      } catch (err) {
+        console.error('Turf buffering error:', err);
+        return;
+      }
+
       const wallFeature: WallFeature = {
         type: 'Feature',
         id: newFeature.id,
@@ -264,14 +277,19 @@ export default function Editor() {
         properties: {
           type: 'wall',
           width: wallWidth,
-          height: 5,
+          height: WALL_HEIGHT, // Explicitly set to 5 meters
         },
       };
-      setFeatures({
-        ...features,
-        features: [...features.features, wallFeature],
-      });
-      draw.current?.changeMode('draw_line_string');
+
+      setFeatures((prev) => ({
+        ...prev,
+        features: [...prev.features, wallFeature],
+      }));
+
+      // Avoid recursion loop
+      setTimeout(() => {
+        draw.current?.changeMode('draw_line_string');
+      }, 0);
     } else if (mode === 'draw_room' && newFeature.geometry.type === 'Polygon') {
       const roomFeature: RoomFeature = {
         type: 'Feature',
@@ -359,11 +377,6 @@ export default function Editor() {
         setOverlayImage(url);
         setOverlayCoords(coords);
         setOverlaySize({ width: initialWidth, height: initialHeight });
-        transformRef.current = {
-          translate: { x: center.lng, y: center.lat },
-          scale: { x: 1, y: 1 },
-          rotation: 0,
-        };
       };
     }
   };
