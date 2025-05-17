@@ -52,7 +52,7 @@ export default function Editor() {
   const [selectedFurniture, setSelectedFurniture] = useState<string | null>(null);
   const [overlayImage, setOverlayImage] = useState<string | null>(null);
   const [overlayOpacity, setOverlayOpacity] = useState(0.5);
-  const WALL_HEIGHT = 5;
+  const WALL_HEIGHT = 10;
   const [wallWidth, setWallWidth] = useState(0.3);
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null);
   const [overlayCoords, setOverlayCoords] = useState<number[][] | null>(null);
@@ -65,7 +65,7 @@ export default function Editor() {
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      // style: 'mapbox://styles/mapbox/light-v10',
+      style: 'mapbox://styles/mapbox/streets-v12',
       center: [24.8182, 60.1842],
       zoom: 17,
       // pitch: 60, // Enable 3D perspective
