@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+// app/editor/layout.tsx
 import { Geist, Geist_Mono } from "next/font/google";
 import "../globals.css";
 
@@ -12,23 +12,14 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "Admin Dashboard",
-  description: "Admin Dashboard for managing the application",
-};
-
-export default function RootLayout({
+export default function EditorLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
-      </body>
-    </html>
+    <div className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      {children}
+    </div>
   );
 }

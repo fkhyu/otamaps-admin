@@ -7,6 +7,8 @@ import * as turf from '@turf/turf';
 import { Feature, FeatureCollection, Polygon, LineString, Point } from 'geojson';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
 
@@ -22,6 +24,7 @@ interface FurnitureFeature extends Feature<Point> {
   properties: {
     type: 'furniture' | 'door';
     item: string;
+    emoji: string;
     orientation: number;
   };
 }
@@ -40,7 +43,7 @@ interface RoomFeature extends Feature<Polygon> {
 const furnitureLibrary = [
   { id: 'sofa', name: 'Sofa', icon: '🛋️' },
   { id: 'pool_table', name: 'Pool Table', icon: '🎱' },
-  { id: 'door', name: 'Door', icon: '🚪' },
+  { id: 'cube', name: 'Cube', icon: '🚪' },
 ];
 
 export default function Editor() {
@@ -58,82 +61,123 @@ export default function Editor() {
   const [overlayCoords, setOverlayCoords] = useState<number[][] | null>(null);
   const [overlaySize, setOverlaySize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null);
+  const modelScale = 1;
+  const modelRotate = [Math.PI / 2, 0, 0];
+  const scene = new THREE.Scene();
+  const loader = new GLTFLoader();
 
   // Map initialization
-  useEffect(() => {
-    if (!mapContainer.current) return;
+useEffect(() => {
+  if (!mapContainer.current) return;
 
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
-      center: [24.8182, 60.1842],
-      zoom: 17,
-      // pitch: 60, // Enable 3D perspective
-      bearing: 0,
+  map.current = new mapboxgl.Map({
+    container: mapContainer.current,
+    style: 'mapbox://styles/mapbox/streets-v12',
+    center: [24.8182, 60.1842],
+    zoom: 17,
+    bearing: 0,
+    antialias: true,
+  });
+
+  draw.current = new MapboxDraw({
+    displayControlsDefault: false,
+    controls: {
+      line_string: true,
+      polygon: true,
+      trash: true,
+    },
+  });
+
+  map.current.addControl(draw.current);
+
+  // Add lighting to the Three.js scene
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.5); // Soft ambient light
+  scene.add(ambientLight);
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5); // Directional light
+  directionalLight.position.set(0, 0, 10); // Position above the scene
+  scene.add(directionalLight);
+
+  map.current.on('load', () => {
+    map.current!.addSource('features', {
+      type: 'geojson',
+      data: features,
     });
 
-    draw.current = new MapboxDraw({
-      displayControlsDefault: false,
-      controls: {
-        line_string: true,
-        polygon: true,
-        trash: true,
+    map.current!.addLayer({
+      id: 'walls',
+      type: 'fill-extrusion',
+      source: 'features',
+      filter: ['==', ['get', 'type'], 'wall'],
+      paint: {
+        'fill-extrusion-color': '#4a4a4a',
+        'fill-extrusion-height': ['get', 'height'],
+        'fill-extrusion-base': 0,
+        'fill-extrusion-opacity': 0.9,
       },
     });
 
-    map.current.addControl(draw.current);
-
-    map.current.on('load', () => {
-      map.current!.addSource('features', {
-        type: 'geojson',
-        data: features,
-      });
-
-      map.current!.addLayer({
-        id: 'walls',
-        type: 'fill-extrusion',
-        source: 'features',
-        filter: ['==', ['get', 'type'], 'wall'],
-        paint: {
-          'fill-extrusion-color': '#4a4a4a', // Darker color for better 3D contrast
-          'fill-extrusion-height': ['get', 'height'],
-          'fill-extrusion-base': 0,
-          'fill-extrusion-opacity': 0.9, // Slightly more opaque for solidity
-        },
-      });
-
-      map.current!.addLayer({
-        id: 'furniture',
-        type: 'symbol',
-        source: 'features',
-        filter: ['==', ['get', 'type'], 'furniture'],
-        layout: {
-          'icon-image': ['get', 'item'],
-          'icon-size': 0.5,
-          'icon-rotate': ['get', 'orientation'],
-        },
-      });
-
-      map.current!.addLayer({
-        id: 'rooms',
-        type: 'fill',
-        source: 'features',
-        filter: ['==', ['get', 'type'], 'room'],
-        paint: {
-          'fill-color': ['get', 'color'],
-          'fill-opacity': 0.5,
-        },
-      });
+    map.current!.addLayer({
+      id: 'rooms',
+      type: 'fill',
+      source: 'features',
+      filter: ['==', ['get', 'type'], 'room'],
+      paint: {
+        'fill-color': ['get', 'color'],
+        'fill-opacity': 0.5,
+      },
     });
 
-    map.current.on('draw.create', handleDrawCreate);
-    map.current.on('click', handleMapClick);
+    map.current!.addLayer(
+      {
+        id: '3d-model',
+        type: 'custom',
+        renderingMode: '3d',
+        onAdd: function (map, gl) {
+          // Create a PerspectiveCamera
+          this.camera = new THREE.PerspectiveCamera(
+            75, // Field of view
+            map.getCanvas().width / map.getCanvas().height, // Aspect ratio
+            0.000001, // Near plane
+            1000 // Far plane
+          );
+          this.renderer = new THREE.WebGLRenderer({
+            canvas: map.getCanvas(),
+            context: gl,
+            antialias: true,
+          });
+          this.renderer.autoClear = false;
+          // Update camera aspect ratio on map resize
+          map.on('resize', () => {
+            this.camera.aspect = map.getCanvas().width / map.getCanvas().height;
+            this.camera.updateProjectionMatrix();
+          });
+        },
+        render: function (gl, matrix) {
+          const m = new THREE.Matrix4().fromArray(matrix);
+          // Decompose Mapbox matrix to set camera position and orientation
+          const l = new THREE.Matrix4().copy(m).invert();
+          this.camera.projectionMatrix = m;
+          this.camera.matrixWorldInverse.copy(l);
+          this.camera.matrixWorld.copy(l).invert();
+          this.renderer.resetState();
+          this.renderer.render(scene, this.camera);
+          map.current?.triggerRepaint();
+        },
+      },
+      'rooms'
+    );
+    
+  });
 
-    return () => map.current?.remove();
-  }, []);
+  map.current.on('draw.create', handleDrawCreate);
+  map.current.on('click', handleMapClick);
+
+  return () => map.current?.remove();
+}, []);
 
   // Overlay adjustment markers
   useEffect(() => {
+    (window as any).features = features;
     if (!map.current || !overlayCoords || mode !== 'adjust_overlay' || !overlayImage) {
       document.querySelectorAll('.overlay-marker').forEach((el) => el.remove());
       return;
@@ -143,7 +187,6 @@ export default function Editor() {
     let rafId: number;
     let isDragging = false;
 
-    // Create marker
     const createMarker = (color: string, position: number[], cornerIndex: number) => {
       const el = document.createElement('div');
       el.className = 'overlay-marker';
@@ -153,7 +196,7 @@ export default function Editor() {
       el.style.borderRadius = '50%';
       el.style.cursor = 'move';
       const marker = new mapboxgl.Marker({ element: el, draggable: true }).setLngLat(position);
-      
+
       marker.on('dragstart', () => {
         isDragging = true;
         rafId = requestAnimationFrame(animate);
@@ -175,12 +218,11 @@ export default function Editor() {
       return marker;
     };
 
-    // Create markers for each corner
     const corners = [
-      { color: 'green', index: 0 }, // Top-left
-      { color: 'yellow', index: 1 }, // Top-right
-      { color: 'red', index: 2 }, // Bottom-right
-      { color: 'blue', index: 3 }, // Bottom-left
+      { color: 'green', index: 0 },
+      { color: 'yellow', index: 1 },
+      { color: 'red', index: 2 },
+      { color: 'blue', index: 3 },
     ];
 
     corners.forEach(({ color, index }) => {
@@ -189,7 +231,6 @@ export default function Editor() {
       marker.addTo(map.current!);
     });
 
-    // Update overlay source
     const updateOverlay = (coords: number[][]) => {
       if (map.current!.getSource('overlay')) {
         (map.current!.getSource('overlay') as mapboxgl.ImageSource).updateImage({
@@ -199,7 +240,6 @@ export default function Editor() {
       }
     };
 
-    // Animation loop for smooth updates
     const animate = () => {
       if (!isDragging) return;
       markers.forEach((marker, index) => {
@@ -255,7 +295,6 @@ export default function Editor() {
     const newFeature = e.features[0];
     if (mode === 'draw_wall' && newFeature.geometry.type === 'LineString') {
       const line = turf.lineString(newFeature.geometry.coordinates);
-      // const simplified = turf.simplify(line, { tolerance: 0.0001, highQuality: false });
       const cleaned = turf.truncate(line, { precision: 10 });
 
       let buffered: turf.Feature<Polygon>;
@@ -277,7 +316,7 @@ export default function Editor() {
         properties: {
           type: 'wall',
           width: wallWidth,
-          height: WALL_HEIGHT, // Explicitly set to 5 meters
+          height: WALL_HEIGHT,
         },
       };
 
@@ -286,7 +325,6 @@ export default function Editor() {
         features: [...prev.features, wallFeature],
       }));
 
-      // Avoid recursion loop
       setTimeout(() => {
         draw.current?.changeMode('draw_line_string');
       }, 0);
@@ -313,24 +351,7 @@ export default function Editor() {
   };
 
   const handleMapClick = (e: mapboxgl.MapMouseEvent) => {
-    if (mode === 'place_furniture' && selectedFurniture) {
-      const point: FurnitureFeature = {
-        type: 'Feature',
-        geometry: {
-          type: 'Point',
-          coordinates: [e.lngLat.lng, e.lngLat.lat],
-        },
-        properties: {
-          type: selectedFurniture === 'door' ? 'door' : 'furniture',
-          item: selectedFurniture,
-          orientation: 0,
-        },
-      };
-      setFeatures({
-        ...features,
-        features: [...features.features, point],
-      });
-    } else if (mode === 'edit') {
+    if (mode === 'edit') {
       const featuresAtPoint = map.current!.queryRenderedFeatures(e.point, {
         layers: ['rooms'],
       });
@@ -351,6 +372,108 @@ export default function Editor() {
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  const handleDrop = (e: DragEvent) => {
+    e.preventDefault();
+
+    const json = e.dataTransfer?.getData('application/json');
+    if (!json || !map.current) return;
+
+    const data = JSON.parse(json);
+    const rect = mapContainer.current!.getBoundingClientRect();
+    const point = {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+    };
+
+    const lngLat = map.current.unproject(point);
+
+    // Create a feature for ALL furniture items including door
+    const pointFeature: FurnitureFeature = {
+        type: 'Feature',
+        geometry: {
+        type: 'Point',
+        coordinates: [lngLat.lng, lngLat.lat],
+        },
+        properties: {
+        type: data.id === 'door' ? 'door' : 'furniture',
+        item: data.id,
+        emoji: data.icon,
+        orientation: 0,
+        },
+    };
+
+    // Add to features for ALL furniture types
+    setFeatures((prev) => ({
+        ...prev,
+        features: [...prev.features, pointFeature],
+    }));
+
+    console.log('Dropped ' + pointFeature.properties.item + ' coordinates:', pointFeature.geometry.coordinates);
+
+    const modelPath = `/3d/${data.id}.glb`;
+    const mercatorCoord = mapboxgl.MercatorCoordinate.fromLngLat(
+        { lng: lngLat.lng, lat: lngLat.lat },
+        0.0001 // Slight z-offset to avoid clipping with ground
+    );
+
+    loader.load(
+        modelPath,
+        (gltf) => {
+            const model = gltf.scene;
+
+            // Calculate model size
+            const box = new THREE.Box3().setFromObject(model);
+            const size = new THREE.Vector3();
+            box.getSize(size);
+            console.log(`Loaded ${data.id} model size:`, size);
+
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const targetSize = 0.0000002; // or adjust to your needs (Mercator units ~ meters)
+            const scale = targetSize / maxDim;
+
+            model.scale.set(scale, scale, scale);
+            model.position.set(mercatorCoord.x, mercatorCoord.y, mercatorCoord.z);
+            model.rotation.set(Math.PI / 2, 0, 0);
+
+            // Optionally adjust material to be safe
+            model.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) {
+                const mesh = child as THREE.Mesh;
+                mesh.material = new THREE.MeshStandardMaterial({
+                color: 0xaaaaaa,
+                roughness: 0.8,
+                metalness: 0.3,
+                // wireframe: true,
+                });
+            }
+            });
+
+            scene.add(model);
+            map.current?.triggerRepaint();
+        },
+        undefined,
+        (error) => {
+            console.error(`Failed to load ${modelPath}:`, error);
+        }
+        );
+
+    };
+
+useEffect(() => {
+    const container = mapContainer.current;
+    if (!container) return;
+
+    const handleDropWrapper = (e: DragEvent) => handleDrop(e);
+
+    container.addEventListener('drop', handleDropWrapper);
+    container.addEventListener('dragover', (e) => e.preventDefault());
+
+    return () => {
+      container.removeEventListener('drop', handleDropWrapper);
+      container.removeEventListener('dragover', (e) => e.preventDefault());
+    };
+  }, []);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -394,7 +517,7 @@ export default function Editor() {
 
   return (
     <div className="flex h-screen">
-      <div className="w-64 bg-gray-100 p-4 flex flex-col gap-4">
+      <div className="w-1/6 bg-gray-100 p-4 flex flex-col gap-4">
         <h2 className="text-lg font-bold">Editor Tools</h2>
         <div>
           <label className="block">Mode:</label>
@@ -431,18 +554,21 @@ export default function Editor() {
         {mode === 'place_furniture' && (
           <div>
             <label>Select Item:</label>
-            <select
-              value={selectedFurniture || ''}
-              onChange={(e) => setSelectedFurniture(e.target.value || null)}
-              className="w-full p-2 border"
-            >
-              <option value="">Select...</option>
+            <div className="grid grid-cols-2 gap-2">
               {furnitureLibrary.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.icon} {item.name}
-                </option>
+                <div
+                  key={item.id}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('application/json', JSON.stringify(item));
+                  }}
+                  className="bg-white border p-2 rounded cursor-move flex items-center gap-2"
+                >
+                  <span>{item.icon}</span>
+                  <span>{item.name}</span>
+                </div>
               ))}
-            </select>
+            </div>
           </div>
         )}
         <div>
