@@ -756,7 +756,7 @@ const Editor: React.FC = () => {
   // Render
   return (
     <div className="flex h-screen">
-      <div className="w-1/6 bg-gray-100 p-4 flex flex-col gap-4">
+      <div className="w-1/6 bg-gray-100 dark:bg-gray-900 p-4 flex flex-col gap-4">
         <h2 className="text-lg font-bold">Editor Tools</h2>
         <div>
           <label className="block">Mode:</label>
@@ -771,7 +771,7 @@ const Editor: React.FC = () => {
               );
               if (newMode !== 'edit_furniture') setSelectedFurniture(null);
             }}
-            className="w-full p-2 border"
+            className="w-full p-2 border dark:bg-gray-700"
           >
             <option value="draw_wall">Draw Wall</option>
             <option value="draw_room">Draw Room</option>
@@ -789,7 +789,7 @@ const Editor: React.FC = () => {
               value={wallWidth}
               onChange={(e) => setWallWidth(Number(e.target.value))}
               step="0.1"
-              className="w-full p-2 border"
+              className="w-full p-2 border dark:bg-gray:700"
             />
           </div>
         )}
@@ -804,7 +804,7 @@ const Editor: React.FC = () => {
                   onDragStart={(e) => {
                     e.dataTransfer.setData('application/json', JSON.stringify(item));
                   }}
-                  className="bg-white border p-2 rounded cursor-move flex items-center gap-2"
+                  className="bg-white dark:bg-gray-700 border p-2 rounded cursor-move flex items-center gap-2"
                 >
                   <span>{item.icon}</span>
                   <span>{item.name}</span>
