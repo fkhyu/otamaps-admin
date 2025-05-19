@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import * as turf from '@turf/turf';
@@ -10,8 +10,23 @@ import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 
-mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
+// Constants
+const MAPBOX_STYLE = 'mapbox://styles/mapbox/streets-v12';
+const DEFAULT_CENTER: [number, number] = [24.8182, 60.1842];
+const DEFAULT_ZOOM = 17;
+const WALL_HEIGHT = 10;
+const DEFAULT_WALL_WIDTH = 0.3;
+const DEFAULT_OVERLAY_OPACITY = 0.5;
+const MODEL_ROTATE = [Math.PI / 2, 0, 0];
 
+// Furniture Dimensions (in meters, scaled for map)
+const FURNITURE_SIZES = {
+  sofa: { width: 0.0000002, height: 0.00000008, depth: 0.0000001 }, // Long and low
+  chair: { width: 0.00000008, height: 0.0000001, depth: 0.00000008 }, // Small and tall
+  table: { width: 0.00000015, height: 0.00000007, depth: 0.00000015 }, // Wide and flat
+};
+
+// Interfaces
 interface WallFeature extends Feature<Polygon> {
   properties: {
     type: 'wall';
@@ -40,70 +55,100 @@ interface RoomFeature extends Feature<Polygon> {
   };
 }
 
-const furnitureLibrary = [
+interface FurnitureItem {
+  id: string;
+  name: string;
+  icon: string;
+}
+
+interface OverlaySize {
+  width: number;
+  height: number;
+}
+
+type EditorMode = 'draw_wall' | 'draw_room' | 'place_furniture' | 'edit' | 'adjust_overlay';
+
+// Furniture Library
+const furnitureLibrary: FurnitureItem[] = [
   { id: 'sofa', name: 'Sofa', icon: '🛋️' },
-  { id: 'pool_table', name: 'Pool Table', icon: '🎱' },
+  { id: 'chair', name: 'Chair', icon: '🪑' },
+  { id: 'table', name: 'Table', icon: '🪵' },
   { id: 'cube', name: 'Cube', icon: '🚪' },
 ];
 
-export default function Editor() {
+// Mapbox Configuration
+mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN || '';
+
+const Editor: React.FC = () => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const draw = useRef<MapboxDraw | null>(null);
-  const [mode, setMode] = useState<'draw_wall' | 'draw_room' | 'place_furniture' | 'edit' | 'adjust_overlay'>('draw_wall');
+  const scene = useRef(new THREE.Scene()).current;
+  const loader = useRef(new GLTFLoader()).current;
+
+  // State
+  const [mode, setMode] = useState<EditorMode>('draw_wall');
   const [features, setFeatures] = useState<FeatureCollection>({ type: 'FeatureCollection', features: [] });
-  const [selectedFurniture, setSelectedFurniture] = useState<string | null>(null);
   const [overlayImage, setOverlayImage] = useState<string | null>(null);
-  const [overlayOpacity, setOverlayOpacity] = useState(0.5);
-  const WALL_HEIGHT = 10;
-  const [wallWidth, setWallWidth] = useState(0.3);
+  const [overlayOpacity, setOverlayOpacity] = useState(DEFAULT_OVERLAY_OPACITY);
+  const [wallWidth, setWallWidth] = useState(DEFAULT_WALL_WIDTH);
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null);
   const [overlayCoords, setOverlayCoords] = useState<number[][] | null>(null);
-  const [overlaySize, setOverlaySize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+  const [overlaySize, setOverlaySize] = useState<OverlaySize>({ width: 0, height: 0 });
   const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null);
-  const modelScale = 1;
-  const modelRotate = [Math.PI / 2, 0, 0];
-  const scene = new THREE.Scene();
-  const loader = new GLTFLoader();
 
-  // Map initialization
-useEffect(() => {
-  if (!mapContainer.current) return;
+  // Initialize Map
+  useEffect(() => {
+    if (!mapContainer.current) return;
 
-  map.current = new mapboxgl.Map({
-    container: mapContainer.current,
-    style: 'mapbox://styles/mapbox/streets-v12',
-    center: [24.8182, 60.1842],
-    zoom: 17,
-    bearing: 0,
-    antialias: true,
-  });
+    map.current = new mapboxgl.Map({
+      container: mapContainer.current,
+      style: MAPBOX_STYLE,
+      center: DEFAULT_CENTER,
+      zoom: DEFAULT_ZOOM,
+      bearing: 0,
+      antialias: true,
+    });
 
-  draw.current = new MapboxDraw({
-    displayControlsDefault: false,
-    controls: {
-      line_string: true,
-      polygon: true,
-      trash: true,
-    },
-  });
+    draw.current = new MapboxDraw({
+      displayControlsDefault: false,
+      controls: { line_string: true, polygon: true, trash: true },
+    });
 
-  map.current.addControl(draw.current);
+    map.current.addControl(draw.current);
 
-  // Add lighting to the Three.js scene
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.5); // Soft ambient light
-  scene.add(ambientLight);
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5); // Directional light
-  directionalLight.position.set(0, 0, 10); // Position above the scene
-  scene.add(directionalLight);
+    // Setup Three.js scene lighting
+    setupSceneLighting(scene);
 
-  map.current.on('load', () => {
-    map.current!.addSource('features', {
+    // Map load handler
+    map.current.on('load', () => initializeMapLayers());
+    map.current.on('draw.create', handleDrawCreate);
+    map.current.on('click', handleMapClick);
+
+    return () => {
+      map.current?.remove();
+    };
+  }, []);
+
+  // Setup Three.js scene lighting
+  const setupSceneLighting = (scene: THREE.Scene) => {
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+    directionalLight.position.set(0, 0, 10);
+    scene.add(directionalLight);
+  };
+
+  // Initialize map layers
+  const initializeMapLayers = useCallback(() => {
+    if (!map.current) return;
+
+    map.current.addSource('features', {
       type: 'geojson',
       data: features,
     });
 
-    map.current!.addLayer({
+    map.current.addLayer({
       id: 'walls',
       type: 'fill-extrusion',
       source: 'features',
@@ -116,7 +161,7 @@ useEffect(() => {
       },
     });
 
-    map.current!.addLayer({
+    map.current.addLayer({
       id: 'rooms',
       type: 'fill',
       source: 'features',
@@ -127,96 +172,94 @@ useEffect(() => {
       },
     });
 
-    map.current!.addLayer(
-      {
-        id: '3d-model',
-        type: 'custom',
-        renderingMode: '3d',
-        onAdd: function (map, gl) {
-          // Create a PerspectiveCamera
-          this.camera = new THREE.PerspectiveCamera(
-            75, // Field of view
-            map.getCanvas().width / map.getCanvas().height, // Aspect ratio
-            0.000001, // Near plane
-            1000 // Far plane
-          );
-          this.renderer = new THREE.WebGLRenderer({
-            canvas: map.getCanvas(),
-            context: gl,
-            antialias: true,
-          });
-          this.renderer.autoClear = false;
-          // Update camera aspect ratio on map resize
-          map.on('resize', () => {
-            this.camera.aspect = map.getCanvas().width / map.getCanvas().height;
-            this.camera.updateProjectionMatrix();
-          });
-        },
-        render: function (gl, matrix) {
-          const m = new THREE.Matrix4().fromArray(matrix);
-          // Decompose Mapbox matrix to set camera position and orientation
-          const l = new THREE.Matrix4().copy(m).invert();
-          this.camera.projectionMatrix = m;
-          this.camera.matrixWorldInverse.copy(l);
-          this.camera.matrixWorld.copy(l).invert();
-          this.renderer.resetState();
-          this.renderer.render(scene, this.camera);
-          map.current?.triggerRepaint();
-        },
+    map.current.addLayer({
+      id: '3d-model',
+      type: 'custom',
+      renderingMode: '3d',
+      onAdd: function (map, gl) {
+        this.camera = new THREE.PerspectiveCamera(
+          75,
+          map.getCanvas().width / map.getCanvas().height,
+          0.000001,
+          1000
+        );
+        this.renderer = new THREE.WebGLRenderer({
+          canvas: map.getCanvas(),
+          context: gl,
+          antialias: true,
+        });
+        this.renderer.autoClear = false;
+
+        map.on('resize', () => {
+          this.camera.aspect = map.getCanvas().width / map.getCanvas().height;
+          this.camera.updateProjectionMatrix();
+        });
       },
-      'rooms'
-    );
-    
-  });
+      render: function (gl, matrix) {
+        const m = new THREE.Matrix4().fromArray(matrix);
+        const l = new THREE.Matrix4().copy(m).invert();
+        this.camera.projectionMatrix = m;
+        this.camera.matrixWorldInverse.copy(l);
+        this.camera.matrixWorld.copy(l).invert();
+        this.renderer.resetState();
+        this.renderer.render(scene, this.camera);
+        map.current?.triggerRepaint();
+      },
+    }, 'rooms');
+  }, [scene, features]);
 
-  map.current.on('draw.create', handleDrawCreate);
-  map.current.on('click', handleMapClick);
-
-  return () => map.current?.remove();
-}, []);
-
-  // Overlay adjustment markers
+  // Handle overlay markers
   useEffect(() => {
-    (window as any).features = features;
     if (!map.current || !overlayCoords || mode !== 'adjust_overlay' || !overlayImage) {
       document.querySelectorAll('.overlay-marker').forEach((el) => el.remove());
       return;
     }
 
+    const markers = createOverlayMarkers(map.current, overlayCoords, setOverlayCoords);
+    return () => markers.forEach((marker) => marker.remove());
+  }, [mode, overlayCoords, overlayImage]);
+
+  // Handle overlay image and opacity
+  useEffect(() => {
+    if (!map.current || !map.current.isStyleLoaded()) return;
+
+    if (overlayImage && overlayCoords) {
+      updateOverlayLayer(map.current, overlayImage, overlayCoords, overlayOpacity);
+    } else if (map.current.getLayer('overlay')) {
+      map.current.removeLayer('overlay');
+      map.current.removeSource('overlay');
+    }
+  }, [overlayImage, overlayCoords, overlayOpacity]);
+
+  // Update features source
+  useEffect(() => {
+    if (map.current && map.current.getSource('features')) {
+      (map.current.getSource('features') as mapboxgl.GeoJSONSource).setData(features);
+    }
+  }, [features]);
+
+  // Handle drag and drop
+  useEffect(() => {
+    const container = mapContainer.current;
+    if (!container) return;
+
+    const handleDropWrapper = (e: DragEvent) => handleDrop(e);
+    const handleDragOver = (e: DragEvent) => e.preventDefault();
+
+    container.addEventListener('drop', handleDropWrapper);
+    container.addEventListener('dragover', handleDragOver);
+
+    return () => {
+      container.removeEventListener('drop', handleDropWrapper);
+      container.removeEventListener('dragover', handleDragOver);
+    };
+  }, []);
+
+  // Utility Functions
+  const createOverlayMarkers = (map: mapboxgl.Map, coords: number[][], setCoords: React.Dispatch<React.SetStateAction<number[][] | null>>) => {
     const markers: mapboxgl.Marker[] = [];
     let rafId: number;
     let isDragging = false;
-
-    const createMarker = (color: string, position: number[], cornerIndex: number) => {
-      const el = document.createElement('div');
-      el.className = 'overlay-marker';
-      el.style.backgroundColor = color;
-      el.style.width = '12px';
-      el.style.height = '12px';
-      el.style.borderRadius = '50%';
-      el.style.cursor = 'move';
-      const marker = new mapboxgl.Marker({ element: el, draggable: true }).setLngLat(position);
-
-      marker.on('dragstart', () => {
-        isDragging = true;
-        rafId = requestAnimationFrame(animate);
-      });
-      marker.on('drag', () => {
-        const lngLat = marker.getLngLat();
-        const newCoords = [...overlayCoords];
-        newCoords[cornerIndex] = [lngLat.lng, lngLat.lat];
-        updateOverlay(newCoords);
-      });
-      marker.on('dragend', () => {
-        isDragging = false;
-        cancelAnimationFrame(rafId);
-        const newCoords = [...overlayCoords];
-        newCoords[cornerIndex] = [marker.getLngLat().lng, marker.getLngLat().lat];
-        setOverlayCoords(newCoords);
-      });
-
-      return marker;
-    };
 
     const corners = [
       { color: 'green', index: 0 },
@@ -226,108 +269,118 @@ useEffect(() => {
     ];
 
     corners.forEach(({ color, index }) => {
-      const marker = createMarker(color, overlayCoords[index], index);
-      markers.push(marker);
-      marker.addTo(map.current!);
-    });
+      const el = document.createElement('div');
+      el.className = 'overlay-marker';
+      el.style.backgroundColor = color;
+      el.style.width = '12px';
+      el.style.height = '12px';
+      el.style.borderRadius = '50%';
+      el.style.cursor = 'move';
 
-    const updateOverlay = (coords: number[][]) => {
-      if (map.current!.getSource('overlay')) {
-        (map.current!.getSource('overlay') as mapboxgl.ImageSource).updateImage({
-          url: overlayImage,
-          coordinates: coords,
+      const marker = new mapboxgl.Marker({ element: el, draggable: true }).setLngLat(coords[index]);
+
+      marker.on('dragstart', () => {
+        isDragging = true;
+        rafId = requestAnimationFrame(animate);
+      });
+
+      marker.on('drag', () => {
+        const lngLat = marker.getLngLat();
+        setCoords((prev) => {
+          if (!prev) return prev;
+          const newCoords = [...prev];
+          newCoords[index] = [lngLat.lng, lngLat.lat];
+          updateOverlay(map, overlayImage!, newCoords);
+          return newCoords;
         });
-      }
-    };
+      });
+
+      marker.on('dragend', () => {
+        isDragging = false;
+        cancelAnimationFrame(rafId);
+      });
+
+      markers.push(marker);
+      marker.addTo(map);
+    });
 
     const animate = () => {
       if (!isDragging) return;
       markers.forEach((marker, index) => {
-        marker.setLngLat(overlayCoords[index]);
+        marker.setLngLat(coords[index]);
       });
       rafId = requestAnimationFrame(animate);
     };
 
-    return () => {
-      cancelAnimationFrame(rafId);
-      markers.forEach((marker) => marker.remove());
-    };
-  }, [mode, overlayCoords, overlayImage]);
+    return markers;
+  };
 
-  // Overlay image and opacity handling
-  useEffect(() => {
-    if (!map.current || !map.current.isStyleLoaded()) return;
-
-    if (overlayImage && overlayCoords) {
-      if (!map.current.getSource('overlay')) {
-        map.current.addSource('overlay', {
-          type: 'image',
-          url: overlayImage,
-          coordinates: overlayCoords,
-        });
-
-        map.current.addLayer({
-          id: 'overlay',
-          type: 'raster',
-          source: 'overlay',
-          paint: { 'raster-opacity': overlayOpacity },
-        });
-      } else {
-        (map.current.getSource('overlay') as mapboxgl.ImageSource).updateImage({
-          url: overlayImage,
-          coordinates: overlayCoords,
-        });
-        map.current.setPaintProperty('overlay', 'raster-opacity', overlayOpacity);
-      }
-    } else if (map.current.getLayer('overlay')) {
-      map.current.removeLayer('overlay');
-      map.current.removeSource('overlay');
+  const updateOverlay = (map: mapboxgl.Map, imageUrl: string, coords: number[][]) => {
+    if (map.getSource('overlay')) {
+      (map.getSource('overlay') as mapboxgl.ImageSource).updateImage({
+        url: imageUrl,
+        coordinates: coords,
+      });
     }
-  }, [overlayImage, overlayCoords, overlayOpacity]);
+  };
 
-  useEffect(() => {
-    if (map.current && map.current.getSource('features')) {
-      (map.current.getSource('features') as mapboxgl.GeoJSONSource).setData(features);
+  const updateOverlayLayer = (map: mapboxgl.Map, imageUrl: string, coords: number[][], opacity: number) => {
+    if (!map.getSource('overlay')) {
+      map.addSource('overlay', {
+        type: 'image',
+        url: imageUrl,
+        coordinates: coords,
+      });
+
+      map.addLayer({
+        id: 'overlay',
+        type: 'raster',
+        source: 'overlay',
+        paint: { 'raster-opacity': opacity },
+      });
+    } else {
+      (map.getSource('overlay') as mapboxgl.ImageSource).updateImage({
+        url: imageUrl,
+        coordinates: coords,
+      });
+      map.setPaintProperty('overlay', 'raster-opacity', opacity);
     }
-  }, [features]);
+  };
 
-  const handleDrawCreate = (e: any) => {
+  const handleDrawCreate = useCallback((e: any) => {
     const newFeature = e.features[0];
-    if (mode === 'draw_wall' && newFeature.geometry.type === 'LineString') {
-      const line = turf.lineString(newFeature.geometry.coordinates);
-      const cleaned = turf.truncate(line, { precision: 10 });
 
-      let buffered: turf.Feature<Polygon>;
+    if (mode === 'draw_wall' && newFeature.geometry.type === 'LineString') {
       try {
-        buffered = turf.buffer(cleaned, Math.max(0.1, wallWidth / 2), { units: 'meters' });
+        const line = turf.lineString(newFeature.geometry.coordinates);
+        const cleaned = turf.truncate(line, { precision: 10 });
+        const buffered = turf.buffer(cleaned, Math.max(0.1, wallWidth / 2), { units: 'meters' });
+
         if (!buffered.geometry || buffered.geometry.type !== 'Polygon') {
           console.error('Invalid polygon geometry created during buffering');
           return;
         }
+
+        const wallFeature: WallFeature = {
+          type: 'Feature',
+          id: newFeature.id,
+          geometry: buffered.geometry as Polygon,
+          properties: {
+            type: 'wall',
+            width: wallWidth,
+            height: WALL_HEIGHT,
+          },
+        };
+
+        setFeatures((prev) => ({
+          ...prev,
+          features: [...prev.features, wallFeature],
+        }));
+
+        draw.current?.changeMode('draw_line_string');
       } catch (err) {
         console.error('Turf buffering error:', err);
-        return;
       }
-
-      const wallFeature: WallFeature = {
-        type: 'Feature',
-        id: newFeature.id,
-        geometry: buffered.geometry as Polygon,
-        properties: {
-          type: 'wall',
-          width: wallWidth,
-          height: WALL_HEIGHT,
-        },
-      };
-
-      setFeatures((prev) => ({
-        ...prev,
-        features: [...prev.features, wallFeature],
-      }));
-
-      setTimeout(() => {
-        draw.current?.changeMode('draw_line_string');
-      }, 0);
     } else if (mode === 'draw_room' && newFeature.geometry.type === 'Polygon') {
       const roomFeature: RoomFeature = {
         type: 'Feature',
@@ -342,28 +395,26 @@ useEffect(() => {
           purpose: 'Meeting',
         },
       };
-      setFeatures({
-        ...features,
-        features: [...features.features, roomFeature],
-      });
+
+      setFeatures((prev) => ({
+        ...prev,
+        features: [...prev.features, roomFeature],
+      }));
       draw.current?.changeMode('draw_polygon');
     }
-  };
+  }, [mode, wallWidth]);
 
-  const handleMapClick = (e: mapboxgl.MapMouseEvent) => {
-    if (mode === 'edit') {
-      const featuresAtPoint = map.current!.queryRenderedFeatures(e.point, {
-        layers: ['rooms'],
-      });
-      if (featuresAtPoint.length > 0) {
-        setSelectedFeature(featuresAtPoint[0]);
-      } else {
-        setSelectedFeature(null);
-      }
-    }
-  };
+  const handleMapClick = useCallback((e: mapboxgl.MapMouseEvent) => {
+    if (mode !== 'edit' || !map.current) return;
 
-  const handleExportGeoJSON = () => {
+    const featuresAtPoint = map.current.queryRenderedFeatures(e.point, {
+      layers: ['rooms'],
+    });
+
+    setSelectedFeature(featuresAtPoint.length > 0 ? featuresAtPoint[0] : null);
+  }, [mode]);
+
+  const handleExportGeoJSON = useCallback(() => {
     const blob = new Blob([JSON.stringify(features, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -371,150 +422,146 @@ useEffect(() => {
     a.download = 'map.geojson';
     a.click();
     URL.revokeObjectURL(url);
-  };
+  }, [features]);
 
-  const handleDrop = (e: DragEvent) => {
+  const handleDrop = useCallback((e: DragEvent) => {
     e.preventDefault();
+    if (!map.current || !mapContainer.current) return;
 
     const json = e.dataTransfer?.getData('application/json');
-    if (!json || !map.current) return;
+    if (!json) return;
 
     const data = JSON.parse(json);
-    const rect = mapContainer.current!.getBoundingClientRect();
+    const rect = mapContainer.current.getBoundingClientRect();
     const point = {
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top,
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
     };
 
     const lngLat = map.current.unproject(point);
-
-    // Create a feature for ALL furniture items including door
     const pointFeature: FurnitureFeature = {
-        type: 'Feature',
-        geometry: {
+      type: 'Feature',
+      geometry: {
         type: 'Point',
         coordinates: [lngLat.lng, lngLat.lat],
-        },
-        properties: {
-        type: data.id === 'door' ? 'door' : 'furniture',
+      },
+      properties: {
+        type: data.id === 'cube' ? 'door' : 'furniture',
         item: data.id,
         emoji: data.icon,
         orientation: 0,
-        },
+      },
     };
 
-    // Add to features for ALL furniture types
     setFeatures((prev) => ({
-        ...prev,
-        features: [...prev.features, pointFeature],
+      ...prev,
+      features: [...prev.features, pointFeature],
     }));
 
-    console.log('Dropped ' + pointFeature.properties.item + ' coordinates:', pointFeature.geometry.coordinates);
-
-    const modelPath = `/3d/${data.id}.glb`;
     const mercatorCoord = mapboxgl.MercatorCoordinate.fromLngLat(
-        { lng: lngLat.lng, lat: lngLat.lat },
-        0.0001 // Slight z-offset to avoid clipping with ground
+      { lng: lngLat.lng, lat: lngLat.lat },
+      0.1
     );
 
-    loader.load(
+    if (data.id === 'cube') {
+      // Load 3D model for door (cube)
+      const modelPath = `/3d/${data.id}.glb`;
+      loader.load(
         modelPath,
         (gltf) => {
-            const model = gltf.scene;
+          const model = gltf.scene;
+          const box = new THREE.Box3().setFromObject(model);
+          const size = new THREE.Vector3();
+          box.getSize(size);
 
-            // Calculate model size
-            const box = new THREE.Box3().setFromObject(model);
-            const size = new THREE.Vector3();
-            box.getSize(size);
-            console.log(`Loaded ${data.id} model size:`, size);
+          const maxDim = Math.max(size.x, size.y, size.z);
+          const targetSize = 0.0000002;
+          const scale = targetSize / maxDim;
 
-            const maxDim = Math.max(size.x, size.y, size.z);
-            const targetSize = 0.0000002; // or adjust to your needs (Mercator units ~ meters)
-            const scale = targetSize / maxDim;
+          model.scale.set(scale, scale, scale);
+          model.position.set(mercatorCoord.x, mercatorCoord.y, mercatorCoord.z);
+          model.rotation.set(...MODEL_ROTATE);
 
-            model.scale.set(scale, scale, scale);
-            model.position.set(mercatorCoord.x, mercatorCoord.y, mercatorCoord.z);
-            model.rotation.set(Math.PI / 2, 0, 0);
-
-            // Optionally adjust material to be safe
-            model.traverse((child) => {
+          model.traverse((child) => {
             if ((child as THREE.Mesh).isMesh) {
-                const mesh = child as THREE.Mesh;
-                mesh.material = new THREE.MeshStandardMaterial({
+              const mesh = child as THREE.Mesh;
+              mesh.material = new THREE.MeshStandardMaterial({
                 color: 0xaaaaaa,
                 roughness: 0.8,
                 metalness: 0.3,
-                // wireframe: true,
-                });
+              });
             }
-            });
+          });
 
-            scene.add(model);
-            map.current?.triggerRepaint();
+          scene.add(model);
+          map.current?.triggerRepaint();
         },
         undefined,
-        (error) => {
-            console.error(`Failed to load ${modelPath}:`, error);
-        }
-        );
+        (error) => console.error(`Failed to load ${modelPath}:`, error)
+      );
+    } else {
+      // Create geometric shape for sofa, chair, or table
+      const sizes = FURNITURE_SIZES[data.id as keyof typeof FURNITURE_SIZES];
+      if (!sizes) return;
 
-    };
+      const geometry = new THREE.BoxGeometry(sizes.width, sizes.height, sizes.depth);
+      const material = new THREE.MeshStandardMaterial({
+        color: 0xaaaaaa,
+        roughness: 0.8,
+        metalness: 0.3,
+      });
+      const mesh = new THREE.Mesh(geometry, material);
 
-useEffect(() => {
-    const container = mapContainer.current;
-    if (!container) return;
+      mesh.position.set(mercatorCoord.x, mercatorCoord.y, mercatorCoord.z);
+      mesh.rotation.set(...MODEL_ROTATE);
 
-    const handleDropWrapper = (e: DragEvent) => handleDrop(e);
+      scene.add(mesh);
+      map.current?.triggerRepaint();
+    }
+  }, [scene]);
 
-    container.addEventListener('drop', handleDropWrapper);
-    container.addEventListener('dragover', (e) => e.preventDefault());
+  const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !map.current) return;
 
-    return () => {
-      container.removeEventListener('drop', handleDropWrapper);
-      container.removeEventListener('dragover', (e) => e.preventDefault());
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.src = url;
+    img.onload = () => {
+      const aspectRatio = img.width / img.height;
+      setImageAspectRatio(aspectRatio);
+
+      const center = map.current!.getCenter();
+      const initialWidth = 0.002;
+      const initialHeight = initialWidth / aspectRatio;
+      const halfWidth = initialWidth / 2;
+      const halfHeight = initialHeight / 2;
+      const coords = [
+        [center.lng - halfWidth, center.lat + halfHeight],
+        [center.lng + halfWidth, center.lat + halfHeight],
+        [center.lng + halfWidth, center.lat - halfHeight],
+        [center.lng - halfWidth, center.lat - halfHeight],
+      ];
+
+      setOverlayImage(url);
+      setOverlayCoords(coords);
+      setOverlaySize({ width: initialWidth, height: initialHeight });
     };
   }, []);
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && map.current) {
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.src = url;
-      img.onload = () => {
-        const aspectRatio = img.width / img.height;
-        setImageAspectRatio(aspectRatio);
-
-        const center = map.current!.getCenter();
-        const initialWidth = 0.002;
-        const initialHeight = initialWidth / aspectRatio;
-        const halfWidth = initialWidth / 2;
-        const halfHeight = initialHeight / 2;
-        const coords = [
-          [center.lng - halfWidth, center.lat + halfHeight],
-          [center.lng + halfWidth, center.lat + halfHeight],
-          [center.lng + halfWidth, center.lat - halfHeight],
-          [center.lng - halfWidth, center.lat - halfHeight],
-        ];
-
-        setOverlayImage(url);
-        setOverlayCoords(coords);
-        setOverlaySize({ width: initialWidth, height: initialHeight });
-      };
-    }
-  };
-
-  const updateRoomProperties = (properties: RoomFeature['properties']) => {
+  const updateRoomProperties = useCallback((properties: RoomFeature['properties']) => {
     if (!selectedFeature) return;
-    setFeatures({
-      ...features,
-      features: features.features.map((f) =>
+
+    setFeatures((prev) => ({
+      ...prev,
+      features: prev.features.map((f) =>
         f.id === selectedFeature.id ? { ...f, properties } : f
       ),
-    });
+    }));
     setSelectedFeature(null);
-  };
+  }, [selectedFeature]);
 
+  // Render
   return (
     <div className="flex h-screen">
       <div className="w-1/6 bg-gray-100 p-4 flex flex-col gap-4">
@@ -524,10 +571,11 @@ useEffect(() => {
           <select
             value={mode}
             onChange={(e) => {
-              setMode(e.target.value as any);
+              const newMode = e.target.value as EditorMode;
+              setMode(newMode);
               draw.current?.changeMode(
-                e.target.value === 'draw_wall' ? 'draw_line_string' :
-                e.target.value === 'draw_room' ? 'draw_polygon' : 'simple_select'
+                newMode === 'draw_wall' ? 'draw_line_string' :
+                newMode === 'draw_room' ? 'draw_polygon' : 'simple_select'
               );
             }}
             className="w-full p-2 border"
@@ -637,4 +685,6 @@ useEffect(() => {
       </div>
     </div>
   );
-}
+};
+
+export default Editor;
