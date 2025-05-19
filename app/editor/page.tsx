@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import * as turf from '@turf/turf';
-import { Feature, FeatureCollection, Polygon, LineString, Point } from 'geojson';
+import { Feature, FeatureCollection, Polygon, LineString } from 'geojson';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 
@@ -14,14 +14,13 @@ const DEFAULT_CENTER: [number, number] = [24.8182, 60.1842];
 const DEFAULT_ZOOM = 17;
 const WALL_HEIGHT = 10;
 const DEFAULT_WALL_WIDTH = 0.3;
-const DEFAULT_OVERLAY_OPACITY = 0.5;
 
 // Furniture Dimensions (in meters, scaled for map)
 const FURNITURE_SIZES = {
-  sofa: { width: 2, height: 0.3, depth: 0.7 }, // Longer, lower
-  chair: { width: 0.7, height: 0.35, depth: 0.7 }, // Taller, smaller footprint (cylinder)
-  table: { width: 1.5, height: 0.5, depth: 2 }, // Wider, flatter
-  cube: { width: 1, height: 1, depth: 1 }, // Door (cube)
+  sofa: { width: 2, height: 0.3, depth: 0.4 },
+  chair: { width: 0.7, height: 0.35, depth: 0.7 },
+  table: { width: 1.5, height: 0.5, depth: 2 },
+  cube: { width: 1, height: 1, depth: 1 },
 };
 
 // Interfaces
@@ -41,14 +40,15 @@ interface FurnitureFeature extends Feature<Polygon> {
     orientation: number;
     height: number;
     shape: 'cube' | 'cylinder';
-    scaleX: number; // Added for resizing
-    scaleY: number; // Added for resizing
+    scaleX: number;
+    scaleY: number;
   };
 }
 
 interface RoomFeature extends Feature<Polygon> {
   properties: {
     type: 'room';
+    name: string; // Added for room naming
     color: string;
     bookable: boolean;
     capacity: number;
@@ -64,13 +64,8 @@ interface FurnitureItem {
   shape: 'cube' | 'cylinder';
 }
 
-interface OverlaySize {
-  width: number;
-  height: number;
-}
-
-// Extended EditorMode to include furniture manipulation
-type EditorMode = 'draw_wall' | 'draw_room' | 'place_furniture' | 'edit' | 'adjust_overlay' | 'edit_furniture';
+// Editor Modes
+type EditorMode = 'draw_wall' | 'draw_room' | 'place_furniture' | 'edit_furniture';
 
 // Furniture Library
 const furnitureLibrary: FurnitureItem[] = [
@@ -93,14 +88,14 @@ const Editor: React.FC = () => {
   const [wallFeatures, setWallFeatures] = useState<FeatureCollection>({ type: 'FeatureCollection', features: [] });
   const [roomFeatures, setRoomFeatures] = useState<FeatureCollection>({ type: 'FeatureCollection', features: [] });
   const [furnitureFeatures, setFurnitureFeatures] = useState<FeatureCollection>({ type: 'FeatureCollection', features: [] });
-  const [overlayImage, setOverlayImage] = useState<string | null>(null);
-  const [overlayOpacity, setOverlayOpacity] = useState(DEFAULT_OVERLAY_OPACITY);
   const [wallWidth, setWallWidth] = useState(DEFAULT_WALL_WIDTH);
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null);
-  const [overlayCoords, setOverlayCoords] = useState<number[][] | null>(null);
-  const [overlaySize, setOverlaySize] = useState<OverlaySize>({ width: 0, height: 0 });
-  const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null);
-  const [selectedFurniture, setSelectedFurniture] = useState<FurnitureFeature | null>(null); // Added for furniture editing
+  const [selectedFurniture, setSelectedFurniture] = useState<FurnitureFeature | null>(null);
+  const [expandedLayers, setExpandedLayers] = useState<{ [key: string]: boolean }>({
+    walls: true,
+    rooms: true,
+    furniture: true,
+  });
 
   // Initialize Map
   useEffect(() => {
@@ -113,6 +108,7 @@ const Editor: React.FC = () => {
       zoom: DEFAULT_ZOOM,
       bearing: 0,
       antialias: true,
+      interactive: true,
     });
 
     draw.current = new MapboxDraw({
@@ -122,13 +118,19 @@ const Editor: React.FC = () => {
 
     map.current.addControl(draw.current);
 
-    // Map load handler
     map.current.on('load', () => initializeMapLayers());
     map.current.on('draw.create', handleDrawCreate);
     map.current.on('click', handleMapClick);
-
-    // Add mousedown for furniture dragging
     map.current.on('mousedown', handleFurnitureMouseDown);
+
+    map.current.on('mousedown', (e) => {
+      if (mode === 'edit_furniture') {
+        map.current?.dragPan.disable();
+      }
+    });
+    map.current.on('mouseup', () => {
+      map.current?.dragPan.enable();
+    });
 
     return () => {
       map.current?.remove();
@@ -139,7 +141,6 @@ const Editor: React.FC = () => {
   const initializeMapLayers = useCallback(() => {
     if (!map.current) return;
 
-    // Source and layer for walls
     map.current.addSource('walls', {
       type: 'geojson',
       data: wallFeatures,
@@ -158,7 +159,6 @@ const Editor: React.FC = () => {
       },
     });
 
-    // Source and layer for rooms
     map.current.addSource('rooms', {
       type: 'geojson',
       data: roomFeatures,
@@ -171,11 +171,10 @@ const Editor: React.FC = () => {
       filter: ['==', ['get', 'type'], 'room'],
       paint: {
         'fill-color': ['get', 'color'],
-        'fill-opacity': 0.5,
+        'fill-opacity': 0.1,
       },
     });
 
-    // Source and layer for furniture
     map.current.addSource('furniture', {
       type: 'geojson',
       data: furnitureFeatures,
@@ -192,6 +191,7 @@ const Editor: React.FC = () => {
         'fill-extrusion-base': 0,
         'fill-extrusion-opacity': 0.9,
       },
+      metadata: { interactive: true },
     });
 
     map.current.addLayer({
@@ -200,36 +200,25 @@ const Editor: React.FC = () => {
       source: 'furniture',
       filter: ['==', ['get', 'type'], 'door'],
       paint: {
-        'fill-extrusion-color': '#4a4a4a', // Match wall color for doors
+        'fill-extrusion-color': '#4a4a4a',
         'fill-extrusion-height': ['get', 'height'],
         'fill-extrusion-base': 0,
         'fill-extrusion-opacity': 0.9,
       },
+      metadata: { interactive: true },
     });
 
-    // Add selection highlight layer
     map.current.addLayer({
       id: 'furniture-selected',
       type: 'line',
       source: 'furniture',
       paint: {
         'line-color': '#00ff00',
-        'line-width': 3,
+        'line-width': 5,
         'line-opacity': ['case', ['==', ['get', 'id'], selectedFurniture?.id || ''], 1, 0],
       },
     });
   }, [wallFeatures, roomFeatures, furnitureFeatures, selectedFurniture]);
-
-  // Handle overlay markers
-  useEffect(() => {
-    if (!map.current || !overlayCoords || mode !== 'adjust_overlay' || !overlayImage) {
-      document.querySelectorAll('.overlay-marker').forEach((el) => el.remove());
-      return;
-    }
-
-    const markers = createOverlayMarkers(map.current, overlayCoords, setOverlayCoords);
-    return () => markers.forEach((marker) => marker.remove());
-  }, [mode, overlayCoords, overlayImage]);
 
   // Handle furniture resize and rotate markers
   useEffect(() => {
@@ -241,18 +230,6 @@ const Editor: React.FC = () => {
     const markers = createFurnitureMarkers(map.current, selectedFurniture, updateFurnitureTransform);
     return () => markers.forEach((marker) => marker.remove());
   }, [selectedFurniture, mode]);
-
-  // Handle overlay image and opacity
-  useEffect(() => {
-    if (!map.current || !map.current.isStyleLoaded()) return;
-
-    if (overlayImage && overlayCoords) {
-      updateOverlayLayer(map.current, overlayImage, overlayCoords, overlayOpacity);
-    } else if (map.current.getLayer('overlay')) {
-      map.current.removeLayer('overlay');
-      map.current.removeSource('overlay');
-    }
-  }, [overlayImage, overlayCoords, overlayOpacity]);
 
   // Update sources
   useEffect(() => {
@@ -291,169 +268,84 @@ const Editor: React.FC = () => {
   }, []);
 
   // Utility Functions
-  const createOverlayMarkers = (map: mapboxgl.Map, coords: number[][], setCoords: React.Dispatch<React.SetStateAction<number[][] | null>>) => {
-    const markers: mapboxgl.Marker[] = [];
-    let rafId: number;
-    let isDragging = false;
-
-    const corners = [
-      { color: 'green', index: 0 },
-      { color: 'yellow', index: 1 },
-      { color: 'red', index: 2 },
-      { color: 'blue', index: 3 },
-    ];
-
-    corners.forEach(({ color, index }) => {
-      const el = document.createElement('div');
-      el.className = 'overlay-marker';
-      el.style.backgroundColor = color;
-      el.style.width = '12px';
-      el.style.height = '12px';
-      el.style.borderRadius = '50%';
-      el.style.cursor = 'move';
-
-      const marker = new mapboxgl.Marker({ element: el, draggable: true }).setLngLat(coords[index]);
-
-      marker.on('dragstart', () => {
-        isDragging = true;
-        rafId = requestAnimationFrame(animate);
-      });
-
-      marker.on('drag', () => {
-        const lngLat = marker.getLngLat();
-        setCoords((prev) => {
-          if (!prev) return prev;
-          const newCoords = [...prev];
-          newCoords[index] = [lngLat.lng, lngLat.lat];
-          updateOverlay(map, overlayImage!, newCoords);
-          return newCoords;
-        });
-      });
-
-      marker.on('dragend', () => {
-        isDragging = false;
-        cancelAnimationFrame(rafId);
-      });
-
-      markers.push(marker);
-      marker.addTo(map);
-    });
-
-    const animate = () => {
-      if (!isDragging) return;
-      markers.forEach((marker, index) => {
-        marker.setLngLat(coords[index]);
-      });
-      rafId = requestAnimationFrame(animate);
-    };
-
-    return markers;
-  };
-
   const createFurnitureMarkers = (
-    map: mapboxgl.Map,
-    furniture: FurnitureFeature,
-    updateTransform: (transform: { orientation?: number; scaleX?: number; scaleY?: number }) => void
-  ) => {
-    const markers: mapboxgl.Marker[] = [];
-    const bbox = turf.bbox(furniture);
-    const [minX, minY, maxX, maxY] = bbox;
+  map: mapboxgl.Map,
+  furniture: FurnitureFeature,
+  updateTransform: (transform: { orientation?: number; scaleX?: number; scaleY?: number }) => void
+) => {
+  const markers: mapboxgl.Marker[] = [];
+  if (!furniture.geometry) {
+    console.warn('Furniture feature missing geometry:', furniture);
+    return markers; // Return empty array if geometry is missing
+  }
 
-    // Resize handles (corners)
-    const corners = [
-      { position: 'top-left', lng: minX, lat: maxY, cursor: 'nwse-resize' },
-      { position: 'top-right', lng: maxX, lat: maxY, cursor: 'nesw-resize' },
-      { position: 'bottom-right', lng: maxX, lat: minY, cursor: 'nwse-resize' },
-      { position: 'bottom-left', lng: minX, lat: minY, cursor: 'nesw-resize' },
-    ];
+  const bbox = turf.bbox(furniture);
+  const [minX, minY, maxX, maxY] = bbox;
 
-    // Rotation handle (slightly offset from top-right)
-    const centroid = turf.centroid(furniture).geometry.coordinates;
-    const rotationHandleOffset = 0.0001; // Adjust as needed
-    const rotationHandle = {
-      position: 'rotate',
-      lng: maxX + rotationHandleOffset,
-      lat: maxY,
-      cursor: 'grab',
-    };
+  // Resize handles (corners)
+  const corners = [
+    { position: 'top-left', lng: minX, lat: maxY, cursor: 'nwse-resize' },
+    { position: 'top-right', lng: maxX, lat: maxY, cursor: 'nesw-resize' },
+    { position: 'bottom-right', lng: maxX, lat: minY, cursor: 'nwse-resize' },
+    { position: 'bottom-left', lng: minX, lat: minY, cursor: 'nesw-resize' },
+  ];
 
-    const allMarkers = [...corners, rotationHandle];
+  // Rotation handle
+  const centroid = turf.centroid(furniture).geometry.coordinates;
+  const rotationHandleOffset = 0.0001;
+  const rotationHandle = {
+    position: 'rotate',
+    lng: maxX + rotationHandleOffset,
+    lat: maxY,
+    cursor: 'grab',
+  };
 
-    allMarkers.forEach(({ position, lng, lat, cursor }) => {
-      const el = document.createElement('div');
-      el.className = 'furniture-marker';
-      el.style.backgroundColor = position === 'rotate' ? 'purple' : 'orange';
-      el.style.width = '10px';
-      el.style.height = '10px';
-      el.style.borderRadius = position === 'rotate' ? '50%' : '0';
-      el.style.cursor = cursor;
+  const allMarkers = [...corners, rotationHandle];
 
-      const marker = new mapboxgl.Marker({ element: el, draggable: true }).setLngLat([lng, lat]);
+  allMarkers.forEach(({ position, lng, lat, cursor }) => {
+    const el = document.createElement('div');
+    el.className = 'furniture-marker';
+    el.style.backgroundColor = position === 'rotate' ? '#800080' : '#ffa500';
+    el.style.width = '12px';
+    el.style.height = '12px';
+    el.style.borderRadius = position === 'rotate' ? '50%' : '0';
+    el.style.cursor = cursor;
+    el.style.border = '2px solid #ffffff';
+    el.style.boxShadow = '0 0 4px rgba(0,0,0,0.5)';
+    el.style.zIndex = '1000';
 
-      marker.on('drag', () => {
-        const lngLat = marker.getLngLat();
-        if (position === 'rotate') {
-          // Calculate rotation angle based on drag
-          const newAngle = Math.atan2(lngLat.lat - centroid[1], lngLat.lng - centroid[0]) * (180 / Math.PI);
-          updateTransform({ orientation: newAngle });
-        } else {
-          // Calculate scaling based on corner drag
-          const newBbox = [...bbox];
-          if (position.includes('left')) newBbox[0] = lngLat.lng;
-          if (position.includes('right')) newBbox[2] = lngLat.lng;
-          if (position.includes('top')) newBbox[3] = lngLat.lat;
-          if (position.includes('bottom')) newBbox[1] = lngLat.lat;
+    const marker = new mapboxgl.Marker({ element: el, draggable: true }).setLngLat([lng, lat]);
 
-          const originalWidth = maxX - minX;
-          const originalHeight = maxY - minY;
-          const newWidth = newBbox[2] - newBbox[0];
-          const newHeight = newBbox[3] - newBbox[1];
+    marker.on('drag', () => {
+      const lngLat = marker.getLngLat();
+      if (position === 'rotate') {
+        const newAngle = Math.atan2(lngLat.lat - centroid[1], lngLat.lng - centroid[0]) * (180 / Math.PI);
+        updateTransform({ orientation: newAngle });
+      } else {
+        const newBbox = [...bbox];
+        if (position.includes('left')) newBbox[0] = lngLat.lng;
+        if (position.includes('right')) newBbox[2] = lngLat.lng;
+        if (position.includes('top')) newBbox[3] = lngLat.lat;
+        if (position.includes('bottom')) newBbox[1] = lngLat.lat;
 
-          const scaleX = newWidth / originalWidth;
-          const scaleY = newHeight / originalHeight;
+        const originalWidth = maxX - minX;
+        const originalHeight = maxY - minY;
+        const newWidth = newBbox[2] - newBbox[0];
+        const newHeight = newBbox[3] - newBbox[1];
 
-          updateTransform({ scaleX: Math.max(0.1, scaleX), scaleY: Math.max(0.1, scaleY) });
-        }
-      });
+        const scaleX = newWidth / originalWidth;
+        const scaleY = newHeight / originalHeight;
 
-      markers.push(marker);
-      marker.addTo(map);
+        updateTransform({ scaleX: Math.max(0.1, scaleX), scaleY: Math.max(0.1, scaleY) });
+      }
     });
 
-    return markers;
-  };
+    markers.push(marker);
+    marker.addTo(map);
+  });
 
-  const updateOverlay = (map: mapboxgl.Map, imageUrl: string, coords: number[][]) => {
-    if (map.getSource('overlay')) {
-      (map.getSource('overlay') as mapboxgl.ImageSource).updateImage({
-        url: imageUrl,
-        coordinates: coords,
-      });
-    }
-  };
-
-  const updateOverlayLayer = (map: mapboxgl.Map, imageUrl: string, coords: number[][], opacity: number) => {
-    if (!map.getSource('overlay')) {
-      map.addSource('overlay', {
-        type: 'image',
-        url: imageUrl,
-        coordinates: coords,
-      });
-
-      map.addLayer({
-        id: 'overlay',
-        type: 'raster',
-        source: 'overlay',
-        paint: { 'raster-opacity': opacity },
-      });
-    } else {
-      (map.getSource('overlay') as mapboxgl.ImageSource).updateImage({
-        url: imageUrl,
-        coordinates: coords,
-      });
-      map.setPaintProperty('overlay', 'raster-opacity', opacity);
-    }
-  };
+  return markers;
+};
 
   const handleDrawCreate = useCallback((e: any) => {
     const newFeature = e.features[0];
@@ -465,7 +357,6 @@ const Editor: React.FC = () => {
         const buffered = turf.buffer(cleaned, Math.max(0.1, wallWidth / 2), { units: 'meters' });
 
         if (!buffered.geometry || buffered.geometry.type !== 'Polygon') {
-        //   console.error('Invalid polygon geometry created during buffering');
           return;
         }
 
@@ -487,15 +378,16 @@ const Editor: React.FC = () => {
 
         draw.current?.changeMode('draw_line_string');
       } catch (err) {
-        // console.error('Turf buffering error:', err);
+        console.error('Turf buffering error:', err);
       }
-    } else if (mode === 'draw_room' && newFeature.geometry.type === 'Polygon') {
+    } else if (mode === 'draw_room') {
       const roomFeature: RoomFeature = {
         type: 'Feature',
         id: newFeature.id,
         geometry: newFeature.geometry as Polygon,
         properties: {
           type: 'room',
+          name: `Room ${roomFeatures.features.length + 1}`, // Default name
           color: '#ff0000',
           bookable: true,
           capacity: 10,
@@ -510,23 +402,31 @@ const Editor: React.FC = () => {
       }));
       draw.current?.changeMode('draw_polygon');
     }
-  }, [mode, wallWidth]);
+  }, [mode, wallWidth, roomFeatures]);
 
   const handleMapClick = useCallback((e: mapboxgl.MapMouseEvent) => {
     if (!map.current) return;
+    e.preventDefault();
+    e.originalEvent.stopPropagation();
 
-    if (mode === 'edit') {
-      const featuresAtPoint = map.current.queryRenderedFeatures(e.point, {
-        layers: ['rooms'],
-      });
-      setSelectedFeature(featuresAtPoint.length > 0 ? featuresAtPoint[0] : null);
-      setSelectedFurniture(null);
-    } else if (mode === 'edit_furniture') {
-      const featuresAtPoint = map.current.queryRenderedFeatures(e.point, {
-        layers: ['furniture', 'doors'],
-      });
-      setSelectedFurniture(featuresAtPoint.length > 0 ? (featuresAtPoint[0] as FurnitureFeature) : null);
+    const bbox = [
+      [e.point.x - 10, e.point.y - 10],
+      [e.point.x + 10, e.point.y + 10],
+    ];
+    const featuresAtPoint = map.current.queryRenderedFeatures(bbox, {
+      layers: ['rooms', 'furniture', 'doors'],
+    });
+
+    if (mode === 'edit_furniture') {
+      const furnitureFeature = featuresAtPoint.find(
+        (f) => f.properties.type === 'furniture' || f.properties.type === 'door'
+      ) as FurnitureFeature | undefined;
+      setSelectedFurniture(furnitureFeature || null);
       setSelectedFeature(null);
+    } else {
+      const roomFeature = featuresAtPoint.find((f) => f.properties.type === 'room') as RoomFeature | undefined;
+      setSelectedFeature(roomFeature || null);
+      setSelectedFurniture(null);
     }
   }, [mode]);
 
@@ -568,54 +468,74 @@ const Editor: React.FC = () => {
 
   const updateFurnitureTransform = useCallback(
     (transform: { orientation?: number; scaleX?: number; scaleY?: number }) => {
-      if (!selectedFurniture) return;
+        if (!selectedFurniture) return;
 
-      setFurnitureFeatures((prev) => ({
+        setFurnitureFeatures((prev) => ({
         ...prev,
         features: prev.features.map((f) => {
-          if (f.id === selectedFurniture.id) {
+            if (f.id === selectedFurniture.id && f.geometry) { // Add geometry check
             let newGeom = f.geometry as Polygon;
             const newProps = { ...f.properties };
 
-            // Apply rotation
             if (transform.orientation !== undefined) {
-              newProps.orientation = transform.orientation;
-              const centroid = turf.centroid(f).geometry.coordinates;
-              newGeom = turf.transformRotate(f.geometry as Polygon, transform.orientation - f.properties.orientation, {
-                pivot: centroid,
-              }).geometry as Polygon;
+                newProps.orientation = transform.orientation;
+                const centroidFeature = turf.centroid(f);
+                if (centroidFeature.geometry) { // Ensure centroid has geometry
+                const centroid = centroidFeature.geometry.coordinates;
+                newGeom = turf.transformRotate(f.geometry as Polygon, transform.orientation - f.properties.orientation, {
+                    pivot: centroid,
+                }).geometry as Polygon;
+                }
             }
 
-            // Apply scaling
             if (transform.scaleX !== undefined || transform.scaleY !== undefined) {
-              newProps.scaleX = transform.scaleX !== undefined ? transform.scaleX : f.properties.scaleX;
-              newProps.scaleY = transform.scaleY !== undefined ? transform.scaleY : f.properties.scaleY;
-              const centroid = turf.centroid(f).geometry.coordinates;
-              newGeom = turf.transformScale(
-                f.geometry as Polygon,
-                (transform.scaleX !== undefined ? transform.scaleX : f.properties.scaleX) /
-                  (f.properties.scaleX || 1),
-                { origin: centroid }
-              ).geometry as Polygon;
-              newGeom = turf.transformScale(
-                newGeom,
-                (transform.scaleY !== undefined ? transform.scaleY : f.properties.scaleY) /
-                  (f.properties.scaleY || 1),
-                { origin: centroid, axis: 'y' }
-              ).geometry as Polygon;
-            }
+                newProps.scaleX = transform.scaleX !== undefined ? transform.scaleX : f.properties.scaleX;
+                newProps.scaleY = transform.scaleY !== undefined ? transform.scaleY : f.properties.scaleY;
+                const centroidFeature = turf.centroid(f);
+                if (centroidFeature.geometry) {
+                    const centroid = centroidFeature.geometry.coordinates;
+                    const scaleXGeom = turf.transformScale(
+                    f.geometry as Polygon,
+                    (transform.scaleX !== undefined ? transform.scaleX : f.properties.scaleX) /
+                        (f.properties.scaleX || 1),
+                    { origin: centroid }
+                    );
+                    if (scaleXGeom.geometry) {
+                    newGeom = scaleXGeom.geometry as Polygon;
+                    const scaleYGeom = turf.transformScale(
+                        newGeom,
+                        (transform.scaleY !== undefined ? transform.scaleY : f.properties.scaleY) /
+                        (f.properties.scaleY || 1),
+                        { origin: centroid, axis: 'y' }
+                    );
+                    if (scaleYGeom.geometry) {
+                        newGeom = scaleYGeom.geometry as Polygon;
+                    }
+                    }
+                }
+                }
 
             return { ...f, geometry: newGeom, properties: newProps };
-          }
-          return f;
+            }
+            return f;
         }),
-      }));
+        }));
     },
     [selectedFurniture]
-  );
+    );
+
+  const updateRoomProperties = useCallback((properties: RoomFeature['properties']) => {
+    if (!selectedFeature) return;
+
+    setRoomFeatures((prev) => ({
+      ...prev,
+      features: prev.features.map((f) =>
+        f.id === selectedFeature.id ? { ...f, properties } : f
+      ),
+    }));
+  }, [selectedFeature]);
 
   const handleExportGeoJSON = useCallback(() => {
-    // Export walls
     const wallsBlob = new Blob([JSON.stringify(wallFeatures, null, 2)], { type: 'application/json' });
     const wallsUrl = URL.createObjectURL(wallsBlob);
     const wallsLink = document.createElement('a');
@@ -624,7 +544,6 @@ const Editor: React.FC = () => {
     wallsLink.click();
     URL.revokeObjectURL(wallsUrl);
 
-    // Export rooms
     const roomsBlob = new Blob([JSON.stringify(roomFeatures, null, 2)], { type: 'application/json' });
     const roomsUrl = URL.createObjectURL(roomsBlob);
     const roomsLink = document.createElement('a');
@@ -633,7 +552,6 @@ const Editor: React.FC = () => {
     roomsLink.click();
     URL.revokeObjectURL(roomsUrl);
 
-    // Export furniture
     const furnitureBlob = new Blob([JSON.stringify(furnitureFeatures, null, 2)], { type: 'application/json' });
     const furnitureUrl = URL.createObjectURL(furnitureBlob);
     const furnitureLink = document.createElement('a');
@@ -660,16 +578,13 @@ const Editor: React.FC = () => {
     const lngLat = map.current.unproject(point);
     const pointGeo = turf.point([lngLat.lng, lngLat.lat]);
 
-    // Get furniture dimensions and shape
     const sizes = FURNITURE_SIZES[data.id as keyof typeof FURNITURE_SIZES];
     if (!sizes) return;
 
     const shape = furnitureLibrary.find((item) => item.id === data.id)?.shape || 'cube';
 
-    // Buffer the point into a polygon based on shape
     let furniturePolygon;
     if (shape === 'cube') {
-      // For cubes (sofa, table, door), create a rectangular polygon
       const halfWidth = sizes.width / 100000;
       const halfDepth = sizes.depth / 100000;
       const coords = [
@@ -677,12 +592,11 @@ const Editor: React.FC = () => {
         [lngLat.lng + halfWidth, lngLat.lat + halfDepth],
         [lngLat.lng + halfWidth, lngLat.lat - halfDepth],
         [lngLat.lng - halfWidth, lngLat.lat - halfDepth],
-        [lngLat.lng - halfWidth, lngLat.lat + halfDepth], // Close the polygon
+        [lngLat.lng - halfWidth, lngLat.lat + halfDepth],
       ];
       furniturePolygon = turf.polygon([coords]);
     } else {
-      // For cylinders (chair), buffer the point into a circular polygon
-      furniturePolygon = turf.buffer(pointGeo, sizes.width / 2, { units: 'meters', steps: 16 }); // 16 steps for a smoother circle
+      furniturePolygon = turf.buffer(pointGeo, sizes.width / 2, { units: 'meters', steps: 16 });
     }
 
     if (!furniturePolygon.geometry || furniturePolygon.geometry.type !== 'Polygon') {
@@ -701,7 +615,7 @@ const Editor: React.FC = () => {
         orientation: 0,
         height: sizes.height,
         shape: shape,
-        scaleX: 1, // Initialize scaling
+        scaleX: 1,
         scaleY: 1,
       },
     };
@@ -712,54 +626,232 @@ const Editor: React.FC = () => {
     }));
   }, []);
 
-  const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !map.current) return;
+  // Layer selection handler
+  const handleLayerSelect = (feature: Feature) => {
+    if (feature.properties.type === 'furniture' || feature.properties.type === 'door') {
+      setSelectedFurniture(feature as FurnitureFeature);
+      setSelectedFeature(null);
+      setMode('edit_furniture');
+    } else {
+      setSelectedFeature(feature);
+      setSelectedFurniture(null);
+      setMode('simple_select');
+    }
+  };
 
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.src = url;
-    img.onload = () => {
-      const aspectRatio = img.width / img.height;
-      setImageAspectRatio(aspectRatio);
-
-      const center = map.current!.getCenter();
-      const initialWidth = 0.002;
-      const initialHeight = initialWidth / aspectRatio;
-      const halfWidth = initialWidth / 2;
-      const halfHeight = initialHeight / 2;
-      const coords = [
-        [center.lng - halfWidth, center.lat + halfHeight],
-        [center.lng + halfWidth, center.lat + halfHeight],
-        [center.lng + halfWidth, center.lat - halfHeight],
-        [center.lng - halfWidth, center.lat - halfHeight],
-      ];
-
-      setOverlayImage(url);
-      setOverlayCoords(coords);
-      setOverlaySize({ width: initialWidth, height: initialHeight });
-    };
-  }, []);
-
-  const updateRoomProperties = useCallback((properties: RoomFeature['properties']) => {
-    if (!selectedFeature) return;
-
-    setRoomFeatures((prev) => ({
-      ...prev,
-      features: prev.features.map((f) =>
-        f.id === selectedFeature.id ? { ...f, properties } : f
-      ),
-    }));
-    setSelectedFeature(null);
-  }, [selectedFeature]);
+  // Toggle layer expansion
+  const toggleLayer = (layer: string) => {
+    setExpandedLayers((prev) => ({ ...prev, [layer]: !prev[layer] }));
+  };
 
   // Render
   return (
-    <div className="flex h-screen">
-      <div className="w-1/6 bg-gray-100 p-4 flex flex-col gap-4">
-        <h2 className="text-lg font-bold">Editor Tools</h2>
-        <div>
-          <label className="block">Mode:</label>
+    <div className="flex flex-col h-screen bg-gray-100">
+      {/* Main Content */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Layers Panel */}
+        <div className="w-64 bg-white shadow-md p-4 overflow-y-auto">
+          <h2 className="text-lg font-semibold text-gray-800 mb-4">Layers</h2>
+          {/* Walls */}
+          {/* <div className="mb-2">
+            <div
+              className="flex items-center justify-between p-2 bg-gray-100 rounded cursor-pointer"
+              onClick={() => toggleLayer('walls')}
+            >
+              <span className="text-sm font-medium">Walls</span>
+              <span>{expandedLayers.walls ? '▼' : '▶'}</span>
+            </div>
+            {expandedLayers.walls && (
+              <div className="ml-4">
+                {wallFeatures.features.map((feature, index) => (
+                  <div
+                    key={feature.id}
+                    className={`p-2 text-sm cursor-pointer hover:bg-gray-200 rounded ${
+                      selectedFeature?.id === feature.id ? 'bg-blue-100' : ''
+                    }`}
+                    onClick={() => handleLayerSelect(feature)}
+                  >
+                    Wall {index + 1}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div> */}
+          {/* Rooms */}
+          <div className="mb-2">
+            <div
+              className="flex items-center justify-between p-2 bg-gray-100 rounded cursor-pointer"
+              onClick={() => toggleLayer('rooms')}
+            >
+              <span className="text-sm font-medium">Rooms</span>
+              <span>{expandedLayers.rooms ? '▼' : '▶'}</span>
+            </div>
+            {expandedLayers.rooms && (
+              <div className="ml-4">
+                {roomFeatures.features.map((feature, index) => (
+                  <div
+                    key={feature.id}
+                    className={`p-2 text-sm cursor-pointer hover:bg-gray-200 rounded ${
+                      selectedFeature?.id === feature.id ? 'bg-blue-100' : ''
+                    }`}
+                    onClick={() => handleLayerSelect(feature)}
+                  >
+                    {feature.properties.name || `Room ${index + 1}`}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          {/* Furniture */}
+          <div>
+            <div
+              className="flex items-center justify-between p-2 bg-gray-100 rounded cursor-pointer"
+              onClick={() => toggleLayer('furniture')}
+            >
+              <span className="text-sm font-medium">Furniture</span>
+              <span>{expandedLayers.furniture ? '▼' : '▶'}</span>
+            </div>
+            {expandedLayers.furniture && (
+              <div className="ml-4">
+                {furnitureFeatures.features.map((feature, index) => (
+                  <div
+                    key={feature.id}
+                    className={`p-2 text-sm cursor-pointer hover:bg-gray-200 rounded ${
+                      selectedFurniture?.id === feature.id ? 'bg-blue-100' : ''
+                    }`}
+                    onClick={() => handleLayerSelect(feature)}
+                  >
+                    {feature.properties.emoji} {feature.properties.item} {index + 1}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Map Container */}
+        <div className="flex-1">
+          <div ref={mapContainer} className="w-full h-full" />
+        </div>
+
+        {/* Right Properties Panel */}
+        <div className="w-64 bg-white shadow-md p-4 overflow-y-auto">
+          <h2 className="text-lg font-semibold text-gray-800 mb-4">Properties</h2>
+          {selectedFeature && selectedFeature.properties.type === 'room' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <input
+                  type="text"
+                  value={selectedFeature.properties.name}
+                  onChange={(e) =>
+                    updateRoomProperties({ ...selectedFeature.properties, name: e.target.value })
+                  }
+                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+                <input
+                  type="color"
+                  value={selectedFeature.properties.color}
+                  onChange={(e) =>
+                    updateRoomProperties({ ...selectedFeature.properties, color: e.target.value })
+                  }
+                  className="w-full h-10 border border-gray-300 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={selectedFeature.properties.bookable}
+                    onChange={(e) =>
+                      updateRoomProperties({ ...selectedFeature.properties, bookable: e.target.checked })
+                    }
+                    className="h-4 w-4 text-blue-500"
+                  />
+                  Bookable
+                </label>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Capacity</label>
+                <input
+                  type="number"
+                  value={selectedFeature.properties.capacity}
+                  onChange={(e) =>
+                    updateRoomProperties({ ...selectedFeature.properties, capacity: Number(e.target.value) })
+                  }
+                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Purpose</label>
+                <input
+                  type="text"
+                  value={selectedFeature.properties.purpose}
+                  onChange={(e) =>
+                    updateRoomProperties({ ...selectedFeature.properties, purpose: e.target.value })
+                  }
+                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+          )}
+          {selectedFurniture && mode === 'edit_furniture' && (
+            <div className="space-y-4">
+              <h3 className="text-md font-semibold text-gray-800">
+                {selectedFurniture.properties.item} Properties
+              </h3>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Rotation (degrees)</label>
+                <input
+                  type="number"
+                  value={selectedFurniture.properties.orientation}
+                  onChange={(e) => updateFurnitureTransform({ orientation: Number(e.target.value) })}
+                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Scale X</label>
+                <input
+                  type="number"
+                  value={selectedFurniture.properties.scaleX}
+                  step="0.1"
+                  min="0.1"
+                  onChange={(e) => updateFurnitureTransform({ scaleX: Number(e.target.value) })}
+                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Scale Y</label>
+                <input
+                  type="number"
+                  value={selectedFurniture.properties.scaleY}
+                  step="0.1"
+                  min="0.1"
+                  onChange={(e) => updateFurnitureTransform({ scaleY: Number(e.target.value) })}
+                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+          )}
+          {!selectedFeature && !selectedFurniture && (
+            <p className="text-sm text-gray-500">Select a layer to edit its properties.</p> 
+          )}
+          <button
+            onClick={handleExportGeoJSON}
+            className="mt-4 w-full bg-blue-600 text-white p-2 rounded-md hover:bg-blue-700 transition font-medium"
+          >
+            Export GeoJSON Files
+          </button>
+        </div>
+      </div>
+
+      {/* Bottom Toolbar */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white shadow-lg p-4 flex items-center gap-4 overflow-x-auto">
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-medium text-gray-700">Mode:</label>
           <select
             value={mode}
             onChange={(e) => {
@@ -771,141 +863,44 @@ const Editor: React.FC = () => {
               );
               if (newMode !== 'edit_furniture') setSelectedFurniture(null);
             }}
-            className="w-full p-2 border"
+            className="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
           >
             <option value="draw_wall">Draw Wall</option>
             <option value="draw_room">Draw Room</option>
             <option value="place_furniture">Place Furniture/Door</option>
-            <option value="edit">Edit Room</option>
             <option value="edit_furniture">Edit Furniture</option>
-            <option value="adjust_overlay">Adjust Overlay</option>
           </select>
         </div>
         {mode === 'draw_wall' && (
-          <div>
-            <label>Wall Width (m):</label>
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700">Wall Width (m):</label>
             <input
               type="number"
               value={wallWidth}
               onChange={(e) => setWallWidth(Number(e.target.value))}
               step="0.1"
-              className="w-full p-2 border"
+              min="0.1"
+              className="w-20 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
             />
           </div>
         )}
         {mode === 'place_furniture' && (
-          <div>
-            <label>Select Item:</label>
-            <div className="grid grid-cols-2 gap-2">
-              {furnitureLibrary.map((item) => (
-                <div
-                  key={item.id}
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData('application/json', JSON.stringify(item));
-                  }}
-                  className="bg-white border p-2 rounded cursor-move flex items-center gap-2"
-                >
-                  <span>{item.icon}</span>
-                  <span>{item.name}</span>
-                </div>
-              ))}
-            </div>
+          <div className="flex items-center gap-3">
+            {furnitureLibrary.map((item) => (
+              <div
+                key={item.id}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('application/json', JSON.stringify(item));
+                }}
+                className="flex items-center gap-2 p-2 bg-gray-100 border border-gray-200 rounded-md cursor-move hover:bg-gray-200 transition"
+              >
+                <span className="text-lg">{item.icon}</span>
+                <span className="text-sm">{item.name}</span>
+              </div>
+            ))}
           </div>
         )}
-        <div>
-          <label>Overlay Image:</label>
-          <input type="file" accept="image/*" onChange={handleImageUpload} className="w-full" />
-          <label>Overlay Opacity:</label>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.1"
-            value={overlayOpacity}
-            onChange={(e) => setOverlayOpacity(Number(e.target.value))}
-            className="w-full"
-          />
-        </div>
-        <button
-          onClick={handleExportGeoJSON}
-          className="bg-blue-500 text-white p-2 rounded"
-        >
-          Export GeoJSON Files
-        </button>
-        {selectedFeature && selectedFeature.properties.type === 'room' && (
-          <div>
-            <h3>Edit Room</h3>
-            <label>Color:</label>
-            <input
-              type="color"
-              value={selectedFeature.properties.color}
-              onChange={(e) =>
-                updateRoomProperties({ ...selectedFeature.properties, color: e.target.value })
-              }
-              className="w-full"
-            />
-            <label>Bookable:</label>
-            <input
-              type="checkbox"
-              checked={selectedFeature.properties.bookable}
-              onChange={(e) =>
-                updateRoomProperties({ ...selectedFeature.properties, bookable: e.target.checked })
-              }
-            />
-            <label>Capacity:</label>
-            <input
-              type="number"
-              value={selectedFeature.properties.capacity}
-              onChange={(e) =>
-                updateRoomProperties({ ...selectedFeature.properties, capacity: Number(e.target.value) })
-              }
-              className="w-full p-2 border"
-            />
-            <label>Purpose:</label>
-            <input
-              type="text"
-              value={selectedFeature.properties.purpose}
-              onChange={(e) =>
-                updateRoomProperties({ ...selectedFeature.properties, purpose: e.target.value })
-              }
-              className="w-full p-2 border"
-            />
-          </div>
-        )}
-        {selectedFurniture && mode === 'edit_furniture' && (
-          <div>
-            <h3>Edit Furniture: {selectedFurniture.properties.item}</h3>
-            <label>Rotation (degrees):</label>
-            <input
-              type="number"
-              value={selectedFurniture.properties.orientation}
-              onChange={(e) => updateFurnitureTransform({ orientation: Number(e.target.value) })}
-              className="w-full p-2 border"
-            />
-            <label>Scale X:</label>
-            <input
-              type="number"
-              value={selectedFurniture.properties.scaleX}
-              step="0.1"
-              min="0.1"
-              onChange={(e) => updateFurnitureTransform({ scaleX: Number(e.target.value) })}
-              className="w-full p-2 border"
-            />
-            <label>Scale Y:</label>
-            <input
-              type="number"
-              value={selectedFurniture.properties.scaleY}
-              step="0.1"
-              min="0.1"
-              onChange={(e) => updateFurnitureTransform({ scaleY: Number(e.target.value) })}
-              className="w-full p-2 border"
-            />
-          </div>
-        )}
-      </div>
-      <div className="flex-1">
-        <div ref={mapContainer} className="w-full h-full" />
       </div>
     </div>
   );
