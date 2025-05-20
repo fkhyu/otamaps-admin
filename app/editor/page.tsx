@@ -9,7 +9,7 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 
 // Constants
-const MAPBOX_STYLE = 'mapbox://styles/mapbox/streets-v12';
+//const MAPBOX_STYLE = 'mapbox://styles/mapbox/streets-v12';
 const DEFAULT_CENTER: [number, number] = [24.8182, 60.1842];
 const DEFAULT_ZOOM = 17;
 const WALL_HEIGHT = 10;
@@ -529,6 +529,10 @@ const Editor: React.FC = () => {
   useEffect(() => {
     if (!mapContainer.current) return;
 
+    const MAPBOX_STYLE = window.matchMedia?.('(prefers-color-scheme: dark)').matches
+      ? 'mapbox://styles/mapbox/dark-v10'
+      : 'mapbox://styles/mapbox/streets-v12';
+      
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: MAPBOX_STYLE,
@@ -711,16 +715,16 @@ const Editor: React.FC = () => {
   // Render
   return (
     <ErrorBoundary>
-      <div className="flex flex-col h-screen bg-gray-100">
+      <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-700">
         {/* Main Content */}
         <div className="flex flex-1 overflow-hidden">
           {/* Left Layers Panel */}
-          <div className="w-64 bg-white shadow-md p-4 overflow-y-auto">
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">Layers</h2>
+          <div className="w-64 bg-white dark:bg-gray-900 shadow-md p-4 overflow-y-auto">
+            <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">Layers</h2>
             {/* Walls */}
             <div className="mb-2">
               <div
-                className="flex items-center justify-between p-2 bg-gray-100 rounded cursor-pointer"
+                className="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-700 rounded cursor-pointer"
                 onClick={() => toggleLayer('walls')}
               >
                 <span className="text-sm font-medium">Walls</span>
@@ -745,7 +749,7 @@ const Editor: React.FC = () => {
             {/* Rooms */}
             <div className="mb-2">
               <div
-                className="flex items-center justify-between p-2 bg-gray-100 rounded cursor-pointer"
+                className="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-700 rounded cursor-pointer"
                 onClick={() => toggleLayer('rooms')}
               >
                 <span className="text-sm font-medium">Rooms</span>
@@ -774,7 +778,7 @@ const Editor: React.FC = () => {
             {/* Furniture */}
             <div>
               <div
-                className="flex items-center justify-between p-2 bg-gray-100 rounded cursor-pointer"
+                className="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-700 rounded cursor-pointer"
                 onClick={() => toggleLayer('furniture')}
               >
                 <span className="text-sm font-medium">Furniture</span>
@@ -805,8 +809,8 @@ const Editor: React.FC = () => {
           </div>
 
           {/* Right Properties Panel */}
-          <div className="w-64 bg-white shadow-md p-4 overflow-y-auto">
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">Properties</h2>
+          <div className="w-64 bg-white dark:bg-gray-900 shadow-md p-4 overflow-y-auto">
+            <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">Properties</h2>
             {selectedFeature && selectedFeature.properties?.type === 'room' && (
               <div className="space-y-4">
                 <div>
@@ -919,7 +923,7 @@ const Editor: React.FC = () => {
         </div>
 
         {/* Bottom Toolbar */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white shadow-lg p-4 flex items-center gap-4 overflow-x-auto">
+        <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-700 shadow-lg p-4 flex items-center gap-4 overflow-x-auto">
           <div className="flex items-center gap-2">
             <label className="text-sm font-medium text-gray-700">Mode:</label>
             <select
@@ -938,7 +942,7 @@ const Editor: React.FC = () => {
                 );
                 if (newMode !== 'edit_furniture') setSelectedFurniture(null);
               }}
-              className="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+              className="p-2 border border-gray-300 dark:bg-gray-700 rounded-md focus:ring-2 focus:ring-blue-500"
             >
               <option value="draw_wall">Draw Wall</option>
               <option value="draw_room">Draw Room</option>
