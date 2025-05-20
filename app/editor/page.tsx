@@ -9,7 +9,6 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 
 // Constants
-//const MAPBOX_STYLE = 'mapbox://styles/mapbox/streets-v12';
 const DEFAULT_CENTER: [number, number] = [24.8182, 60.1842];
 const DEFAULT_ZOOM = 17;
 const WALL_HEIGHT = 10;
@@ -532,7 +531,7 @@ const Editor: React.FC = () => {
     const MAPBOX_STYLE = window.matchMedia?.('(prefers-color-scheme: dark)').matches
       ? 'mapbox://styles/mapbox/dark-v10'
       : 'mapbox://styles/mapbox/streets-v12';
-      
+
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: MAPBOX_STYLE,
