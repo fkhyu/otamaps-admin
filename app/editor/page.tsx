@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Component, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
+import React, { Component, useState, useEffect, useRef, useCallback, ReactNode, useMemo } from 'react';
 import mapboxgl from 'mapbox-gl';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import * as turf from '@turf/turf';
@@ -53,6 +53,7 @@ interface RoomFeature extends Feature<Polygon> {
     capacity: number;
     avEquipment: string[];
     purpose: string;
+    icon: string;
   };
 }
 
@@ -94,7 +95,6 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
 }
 
 const Editor: React.FC = () => {
-  // Utility for generating unique IDs
   const featureIdCounter = useRef(0);
   const generateUniqueId = (prefix: string) => `${prefix}-${Date.now()}-${featureIdCounter.current++}`;
 
@@ -102,6 +102,7 @@ const Editor: React.FC = () => {
   const map = useRef<mapboxgl.Map | null>(null);
   const draw = useRef<MapboxDraw | null>(null);
   const processedFeatureIds = useRef<Set<string>>(new Set());
+  const markersRef = useRef<mapboxgl.Marker[]>([]);
 
   // State
   const [mode, setMode] = useState<EditorMode>('draw_wall');
@@ -109,7 +110,7 @@ const Editor: React.FC = () => {
   const [roomFeatures, setRoomFeatures] = useState<FeatureCollection>({ type: 'FeatureCollection', features: [] });
   const [furnitureFeatures, setFurnitureFeatures] = useState<FeatureCollection>({ type: 'FeatureCollection', features: [] });
   const [wallWidth, setWallWidth] = useState(DEFAULT_WALL_WIDTH);
-  const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null);
+  const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(null);
   const [selectedFurniture, setSelectedFurniture] = useState<FurnitureFeature | null>(null);
   const [expandedLayers, setExpandedLayers] = useState<{ [key: string]: boolean }>({
     walls: true,
@@ -117,168 +118,178 @@ const Editor: React.FC = () => {
     furniture: true,
   });
 
-  // Utility Functions
-  const createFurnitureMarkers = (
-    map: mapboxgl.Map,
-    furniture: FurnitureFeature,
-    updateTransform: (transform: { orientation?: number; scaleX?: number; scaleY?: number }) => void
-  ) => {
-    const markers: mapboxgl.Marker[] = [];
-    if (!furniture.geometry) {
-      console.warn('Furniture feature missing geometry:', furniture);
-      return markers;
-    }
+  const selectedFeature = useMemo(() => {
+    return roomFeatures.features.find((f) => f.id === selectedFeatureId) || null;
+    }, [roomFeatures, selectedFeatureId]);
 
-    const bbox = turf.bbox(furniture);
-    const [minX, minY, maxX, maxY] = bbox;
 
-    // Resize handles (corners)
-    const corners = [
-      { position: 'top-left', lng: minX, lat: maxY, cursor: 'nwse-resize' },
-      { position: 'top-right', lng: maxX, lat: maxY, cursor: 'nesw-resize' },
-      { position: 'bottom-right', lng: maxX, lat: minY, cursor: 'nwse-resize' },
-      { position: 'bottom-left', lng: minX, lat: minY, cursor: 'nesw-resize' },
-    ];
-
-    // Rotation handle
-    const centroid = turf.centroid(furniture).geometry.coordinates;
-    const rotationHandleOffset = 0.0001;
-    const rotationHandle = {
-      position: 'rotate',
-      lng: maxX + rotationHandleOffset,
-      lat: maxY,
-      cursor: 'grab',
+  // Debounce utility for property updates
+  const debounce = useCallback((fn: (...args: any[]) => void, delay: number) => {
+    let timeout: NodeJS.Timeout;
+    return (...args: any[]) => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => fn(...args), delay);
     };
+  }, []);
 
-    const allMarkers = [...corners, rotationHandle];
+  // Utility Functions
+  const createFurnitureMarkers = useCallback(
+    (map: mapboxgl.Map, furniture: FurnitureFeature, updateTransform: (transform: { orientation?: number; scaleX?: number; scaleY?: number }) => void) => {
+      markersRef.current.forEach((marker) => marker.remove());
+      markersRef.current = [];
 
-    allMarkers.forEach(({ position, lng, lat, cursor }) => {
-      const el = document.createElement('div');
-      el.className = 'furniture-marker';
-      el.style.backgroundColor = position === 'rotate' ? '#800080' : '#ffa500';
-      el.style.width = '12px';
-      el.style.height = '12px';
-      el.style.borderRadius = position === 'rotate' ? '50%' : '0';
-      el.style.cursor = cursor;
-      el.style.border = '2px solid #ffffff';
-      el.style.boxShadow = '0 0 4px rgba(0,0,0,0.5)';
-      el.style.zIndex = '1000';
+      if (!furniture.geometry) {
+        console.warn('Furniture feature missing geometry:', furniture);
+        return;
+      }
 
-      const marker = new mapboxgl.Marker({ element: el, draggable: true }).setLngLat([lng, lat]);
+      const bbox = turf.bbox(furniture);
+      const [minX, minY, maxX, maxY] = bbox;
+      const centroid = turf.centroid(furniture).geometry.coordinates;
 
-      marker.on('drag', () => {
-        const lngLat = marker.getLngLat();
-        if (position === 'rotate') {
-          const newAngle = Math.atan2(lngLat.lat - centroid[1], lngLat.lng - centroid[0]) * (180 / Math.PI);
-          updateTransform({ orientation: newAngle });
-        } else {
+      const corners = [
+        { position: 'top-left', lng: minX, lat: maxY, cursor: 'nwse-resize' },
+        { position: 'top-right', lng: maxX, lat: maxY, cursor: 'nesw-resize' },
+        { position: 'bottom-right', lng: maxX, lat: minY, cursor: 'nwse-resize' },
+        { position: 'bottom-left', lng: minX, lat: minY, cursor: 'nesw-resize' },
+      ];
+
+      const rotationHandleOffset = 0.0001;
+      const rotationHandle = {
+        position: 'rotate',
+        lng: maxX + rotationHandleOffset,
+        lat: maxY,
+        cursor: 'grab',
+      };
+
+      const allMarkers = [...corners, rotationHandle];
+
+      allMarkers.forEach(({ position, lng, lat, cursor }) => {
+        const el = document.createElement('div');
+        el.className = 'furniture-marker';
+        el.style.backgroundColor = position === 'rotate' ? '#800080' : '#ffa500';
+        el.style.width = '12px';
+        el.style.height = '12px';
+        el.style.borderRadius = position === 'rotate' ? '50%' : '0';
+        el.style.cursor = cursor;
+        el.style.border = '2px solid #ffffff';
+        el.style.boxShadow = '0 0 4px rgba(0,0,0,0.5)';
+        el.style.zIndex = '1000';
+
+        const marker = new mapboxgl.Marker({ element: el, draggable: true }).setLngLat([lng, lat]);
+
+        marker.on('drag', () => {
+          const lngLat = marker.getLngLat();
           const newBbox = [...bbox];
-          if (position.includes('left')) newBbox[0] = lngLat.lng;
-          if (position.includes('right')) newBbox[2] = lngLat.lng;
-          if (position.includes('top')) newBbox[3] = lngLat.lat;
-          if (position.includes('bottom')) newBbox[1] = lngLat.lat;
+          if (position === 'rotate') {
+            const newAngle = Math.atan2(lngLat.lat - centroid[1], lngLat.lng - centroid[0]) * (180 / Math.PI);
+            updateTransform({ orientation: newAngle });
+          } else {
+            if (position.includes('left')) newBbox[0] = lngLat.lng;
+            if (position.includes('right')) newBbox[2] = lngLat.lng;
+            if (position.includes('top')) newBbox[3] = lngLat.lat;
+            if (position.includes('bottom')) newBbox[1] = lngLat.lat;
 
-          const originalWidth = maxX - minX;
-          const originalHeight = maxY - minY;
-          const newWidth = newBbox[2] - newBbox[0];
-          const newHeight = newBbox[3] - newBbox[1];
+            const originalWidth = maxX - minX;
+            const originalHeight = maxY - minY;
+            const newWidth = newBbox[2] - newBbox[0];
+            const newHeight = newBbox[3] - newBbox[1];
 
-          const scaleX = newWidth / originalWidth;
-          const scaleY = newHeight / originalHeight;
+            const scaleX = newWidth / originalWidth;
+            const scaleY = newHeight / originalHeight;
 
-          updateTransform({ scaleX: Math.max(0.1, scaleX), scaleY: Math.max(0.1, scaleY) });
-        }
+            updateTransform({ scaleX: Math.max(0.1, scaleX), scaleY: Math.max(0.1, scaleY) });
+          }
+        });
+
+        markersRef.current.push(marker);
+        marker.addTo(map);
       });
-
-      markers.push(marker);
-      marker.addTo(map);
-    });
-
-    return markers;
-  };
+    },
+    []
+  );
 
   const handleDrawCreate = useCallback((e: any) => {
-    console.log('draw.create event fired:', e);
+    if (!e.features || !e.features[0] || !e.features[0].geometry) {
+        console.warn('Invalid draw.create event:', e);
+        return;
+    }
     const newFeature = e.features[0];
-    if (!newFeature || !newFeature.geometry || processedFeatureIds.current.has(newFeature.id)) {
-      console.warn('Invalid or already processed feature:', newFeature);
-      return;
+
+    if (processedFeatureIds.current.has(newFeature.id)) {
+        return;
     }
 
-    const uniqueId = newFeature.id || generateUniqueId('feature');
+    const uniqueId = generateUniqueId('feature');
+    newFeature.id = uniqueId;
+
     processedFeatureIds.current.add(uniqueId);
 
-    console.log('Current mode:', mode, 'Geometry type:', newFeature.geometry.type);
-
     if (mode === 'draw_wall' && newFeature.geometry.type === 'LineString') {
-      try {
+        try {
         const line = turf.lineString(newFeature.geometry.coordinates);
         const cleaned = turf.truncate(line, { precision: 10 });
         const buffered = turf.buffer(cleaned, Math.max(0.1, wallWidth / 2), { units: 'meters' });
 
         if (!buffered.geometry || buffered.geometry.type !== 'Polygon') {
-          console.warn('Invalid wall polygon:', buffered);
-          return;
+            console.warn('Invalid wall polygon:', buffered);
+            return;
         }
 
         const wallFeature: WallFeature = {
-          type: 'Feature',
-          id: uniqueId,
-          geometry: buffered.geometry as Polygon,
-          properties: {
+            type: 'Feature',
+            id: uniqueId,
+            geometry: buffered.geometry as Polygon,
+            properties: {
             type: 'wall',
             width: wallWidth,
             height: WALL_HEIGHT,
-          },
+            },
         };
 
         setWallFeatures((prev) => ({
-          ...prev,
-          features: [...prev.features, wallFeature],
+            ...prev,
+            features: [...prev.features, wallFeature],
         }));
 
-        draw.current?.changeMode('draw_line_string');
-      } catch (err) {
+        setTimeout(() => {
+            draw.current?.changeMode('draw_line_string');
+        }, 0);
+
+        } catch (err) {
         console.error('Turf buffering error:', err);
-      }
+        }
     } else if (mode === 'draw_room' || (mode === 'draw_wall' && newFeature.geometry.type === 'Polygon')) {
-      if (newFeature.geometry.type !== 'Polygon') {
-        console.warn('Expected Polygon for room, got:', newFeature.geometry.type);
+        if (newFeature.geometry.type !== 'Polygon') {
         return;
-      }
-      const roomFeature: RoomFeature = {
+        }
+        const roomFeature: RoomFeature = {
         type: 'Feature',
         id: uniqueId,
         geometry: newFeature.geometry as Polygon,
         properties: {
-          type: 'room',
-          name: `Room ${roomFeatures.features.length + 1}`,
-          color: '#ff0000',
-          bookable: true,
-          capacity: 10,
-          avEquipment: [],
-          purpose: 'Meeting',
+            type: 'room',
+            name: `Room ${roomFeatures.features.length + 1}`,
+            color: '#ff0000',
+            bookable: true,
+            capacity: 10,
+            avEquipment: [],
+            purpose: 'Meeting',
+            icon: '🏢',
         },
-      };
-      console.log('Created room:', roomFeature);
-      setRoomFeatures((prev) => {
-        const existingIds = new Set(prev.features.map((f) => f.id));
-        if (existingIds.has(uniqueId)) {
-          console.warn('Duplicate ID detected, generating new ID');
-          roomFeature.id = generateUniqueId('room');
-        }
-        const newFeatures = {
-          ...prev,
-          features: [...prev.features, roomFeature],
         };
-        console.log('Updated roomFeatures:', newFeatures);
-        return newFeatures;
-      });
-      draw.current?.changeMode('draw_polygon');
-    } else {
-      console.warn('Unhandled draw.create case:', { mode, geometryType: allMarkers.geometry.type });
+        setRoomFeatures((prev) => ({
+        ...prev,
+        features: [...prev.features, roomFeature],
+        }));
+
+        setSelectedFeatureId(uniqueId);
+        setTimeout(() => {
+            draw.current?.changeMode('draw_polygon');
+        }, 0);
+
     }
-  }, [mode, wallWidth, roomFeatures]);
+    }, [mode, wallWidth, roomFeatures]);
 
   const handleMapClick = useCallback((e: mapboxgl.MapMouseEvent) => {
     if (!map.current) return;
@@ -292,23 +303,17 @@ const Editor: React.FC = () => {
     const featuresAtPoint = map.current.queryRenderedFeatures(bbox, {
       layers: ['rooms', 'furniture', 'doors'],
     });
-    console.log('Features at point:', featuresAtPoint);
 
     if (mode === 'edit_furniture') {
       const furnitureFeature = featuresAtPoint.find(
         (f) => f.properties.type === 'furniture' || f.properties.type === 'door'
       ) as FurnitureFeature | undefined;
       setSelectedFurniture(furnitureFeature || null);
-      setSelectedFeature(null);
+      setSelectedFeatureId(null);
     } else {
-      const roomFeatures = featuresAtPoint.filter((f) => f.properties.type === 'room') as RoomFeature[];
-      if (roomFeatures.length > 1) {
-        console.warn('Multiple room features found at point:', roomFeatures);
-      }
-      const roomFeature = roomFeatures[0];
-      setSelectedFeature(roomFeature || null);
+      const roomFeature = featuresAtPoint.find((f) => f.properties.type === 'room') as RoomFeature | undefined;
+      setSelectedFeatureId(roomFeature || null);
       setSelectedFurniture(null);
-      console.log('Selected room:', roomFeature);
     }
   }, [mode]);
 
@@ -320,16 +325,18 @@ const Editor: React.FC = () => {
     });
 
     if (featuresAtPoint.length > 0 && featuresAtPoint[0].id === selectedFurniture.id) {
+      const startLngLat = e.lngLat;
+
       const onMouseMove = (moveEvent: mapboxgl.MapMouseEvent) => {
         const delta = [
-          moveEvent.lngLat.lng - e.lngLat.lng,
-          moveEvent.lngLat.lat - e.lngLat.lat,
+          moveEvent.lngLat.lng - startLngLat.lng,
+          moveEvent.lngLat.lat - startLngLat.lat,
         ];
 
         setFurnitureFeatures((prev) => ({
           ...prev,
           features: prev.features.map((f) => {
-            if (f.id === selectedFurniture.id) {
+            if (f.id === selectedFurniture.id && f.geometry) {
               const newGeom = turf.transformTranslate(f.geometry as Polygon, delta[0], delta[1], { units: 'degrees' });
               return { ...f, geometry: newGeom.geometry as Polygon };
             }
@@ -349,98 +356,80 @@ const Editor: React.FC = () => {
   }, [mode, selectedFurniture]);
 
   const updateFurnitureTransform = useCallback(
-    (transform: { orientation?: number; scaleX?: number; scaleY?: number }) => {
-      if (!selectedFurniture) return;
+    debounce((transform: { orientation?: number; scaleX?: number; scaleY?: number }) => {
+      if (!selectedFurniture || !map.current) return;
 
-      setFurnitureFeatures((prev) => ({
-        ...prev,
-        features: prev.features.map((f) => {
+      setFurnitureFeatures((prev) => {
+        const newFeatures = prev.features.map((f) => {
           if (f.id === selectedFurniture.id && f.geometry) {
             let newGeom = f.geometry as Polygon;
             const newProps = { ...f.properties };
 
             if (transform.orientation !== undefined) {
               newProps.orientation = transform.orientation;
-              const centroidFeature = turf.centroid(f);
-              if (centroidFeature.geometry) {
-                const centroid = centroidFeature.geometry.coordinates;
-                newGeom = turf.transformRotate(f.geometry as Polygon, transform.orientation - f.properties.orientation, {
-                  pivot: centroid,
-                }).geometry as Polygon;
-              }
+              const centroid = turf.centroid(f).geometry.coordinates;
+              newGeom = turf.transformRotate(f.geometry as Polygon, transform.orientation - f.properties.orientation, {
+                pivot: centroid,
+              }).geometry as Polygon;
             }
 
             if (transform.scaleX !== undefined || transform.scaleY !== undefined) {
               newProps.scaleX = transform.scaleX !== undefined ? transform.scaleX : f.properties.scaleX;
               newProps.scaleY = transform.scaleY !== undefined ? transform.scaleY : f.properties.scaleY;
-              const centroidFeature = turf.centroid(f);
-              if (centroidFeature.geometry) {
-                const centroid = centroidFeature.geometry.coordinates;
-                const scaleXGeom = turf.transformScale(
-                  f.geometry as Polygon,
-                  (transform.scaleX !== undefined ? transform.scaleX : f.properties.scaleX) /
-                    (f.properties.scaleX || 1),
-                  { origin: centroid }
-                );
-                if (scaleXGeom.geometry) {
-                  newGeom = scaleXGeom.geometry as Polygon;
-                  const scaleYGeom = turf.transformScale(
-                    newGeom,
-                    (transform.scaleY !== undefined ? transform.scaleY : f.properties.scaleY) /
-                      (f.properties.scaleY || 1),
-                    { origin: centroid, axis: 'y' }
-                  );
-                  if (scaleYGeom.geometry) {
-                    newGeom = scaleYGeom.geometry as Polygon;
-                  }
-                }
-              }
+              const centroid = turf.centroid(f).geometry.coordinates;
+              newGeom = turf.transformScale(
+                f.geometry as Polygon,
+                newProps.scaleX / f.properties.scaleX,
+                { origin: centroid }
+              ).geometry as Polygon;
+              newGeom = turf.transformScale(
+                newGeom,
+                newProps.scaleY / f.properties.scaleY,
+                { origin: centroid }
+              ).geometry as Polygon;
             }
 
             return { ...f, geometry: newGeom, properties: newProps };
           }
           return f;
-        }),
-      }));
-    },
-    [selectedFurniture]
+        });
+
+        const updatedFeature = newFeatures.find((f) => f.id === selectedFurniture.id) as FurnitureFeature;
+        if (updatedFeature) {
+          createFurnitureMarkers(map.current!, updatedFeature, updateFurnitureTransform);
+        }
+
+        return { ...prev, features: newFeatures };
+      });
+    }, 100),
+    [selectedFurniture, createFurnitureMarkers]
   );
 
-  const updateRoomProperties = useCallback((properties: RoomFeature['properties']) => {
-    if (!selectedFeature) return;
+  const updateRoomProperties = useCallback((properties: Partial<RoomFeature['properties']>) => {
+  if (!selectedFeatureId) return;
 
     setRoomFeatures((prev) => ({
-      ...prev,
-      features: prev.features.map((f) =>
-        f.id === selectedFeature.id ? { ...f, properties } : f
-      ),
+        ...prev,
+        features: prev.features.map((f) =>
+        f.id === selectedFeatureId ? { ...f, properties: { ...f.properties, ...properties } } : f
+        ),
     }));
-  }, [selectedFeature]);
+    }, [selectedFeatureId]);
 
   const handleExportGeoJSON = useCallback(() => {
-    const wallsBlob = new Blob([JSON.stringify(wallFeatures, null, 2)], { type: 'application/json' });
-    const wallsUrl = URL.createObjectURL(wallsBlob);
-    const wallsLink = document.createElement('a');
-    wallsLink.href = wallsUrl;
-    wallsLink.download = 'walls.geojson';
-    wallsLink.click();
-    URL.revokeObjectURL(wallsUrl);
+    const exportFile = (data: FeatureCollection, filename: string) => {
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    };
 
-    const roomsBlob = new Blob([JSON.stringify(roomFeatures, null, 2)], { type: 'application/json' });
-    const roomsUrl = URL.createObjectURL(roomsBlob);
-    const roomsLink = document.createElement('a');
-    roomsLink.href = roomsUrl;
-    roomsLink.download = 'rooms.geojson';
-    roomsLink.click();
-    URL.revokeObjectURL(roomsUrl);
-
-    const furnitureBlob = new Blob([JSON.stringify(furnitureFeatures, null, 2)], { type: 'application/json' });
-    const furnitureUrl = URL.createObjectURL(furnitureBlob);
-    const furnitureLink = document.createElement('a');
-    furnitureLink.href = furnitureUrl;
-    furnitureLink.download = 'furniture.geojson';
-    furnitureLink.click();
-    URL.revokeObjectURL(furnitureUrl);
+    exportFile(wallFeatures, 'walls.geojson');
+    exportFile(roomFeatures, 'rooms.geojson');
+    exportFile(furnitureFeatures, 'furniture.geojson');
   }, [wallFeatures, roomFeatures, furnitureFeatures]);
 
   const handleDrop = useCallback((e: DragEvent) => {
@@ -508,23 +497,50 @@ const Editor: React.FC = () => {
     }));
   }, []);
 
-  const handleLayerSelect = (feature: Feature) => {
-    if (feature.properties.type === 'furniture' || feature.properties.type === 'door') {
-      setSelectedFurniture(feature as FurnitureFeature);
-      setSelectedFeature(null);
-      setMode('edit_furniture');
-    } else {
-      setSelectedFeature(feature);
-      setSelectedFurniture(null);
-      setMode('simple_select');
+  const handleLayerSelect = useCallback((feature: Feature) => {
+    if (!feature.id) {
+        console.warn('Feature does not have an ID:', feature);
+        return;
     }
-  };
+    if (feature.properties.type === 'furniture' || feature.properties.type === 'door') {
+        setSelectedFurniture(feature as FurnitureFeature);
+        setSelectedFeatureId(null);
+        setMode('edit_furniture');
+    } else if (feature.properties.type === 'room') {
+        setSelectedFeatureId(feature.id as string); // <- use ID here
+        setSelectedFurniture(null);
+        setMode('simple_select');
+    }
+  }, []);
 
-  const toggleLayer = (layer: string) => {
+    const handleDrawUpdate = useCallback((e: any) => {
+        console.log('draw.update', e);
+        if (!e.features || !e.features[0] || !e.features[0].geometry) {
+            console.warn('Invalid draw.update event:', e);
+            return;
+        }
+        const updatedFeature = e.features[0];
+        setRoomFeatures((prev) => ({
+            ...prev,
+            features: prev.features.map((f) =>
+              f.id === updatedFeature.id
+                ? {
+                    ...f,
+                    geometry: updatedFeature.geometry,
+                    // Merge any new properties from the drawn feature, but keep our custom ones
+                    properties: { ...f.properties, ...updatedFeature.properties },
+                  }
+                : f
+            ),
+        }));
+    }, []);
+
+
+  const toggleLayer = useCallback((layer: string) => {
     setExpandedLayers((prev) => ({ ...prev, [layer]: !prev[layer] }));
-  };
+  }, []);
 
-  // Initialize Map
+  // Initialize Map (run only once)
   useEffect(() => {
     if (!mapContainer.current) return;
 
@@ -549,17 +565,21 @@ const Editor: React.FC = () => {
 
     map.current.addControl(draw.current);
 
-    const onLoad = () => {
+    map.current.on('load', () => {
       initializeMapLayers();
-      console.log('Map loaded');
-    };
-    const onDrawCreate = (e: any) => {
-      console.log('draw.create triggered:', e);
-      handleDrawCreate(e);
-    };
+    });
 
-    map.current.on('load', onLoad);
-    map.current.on('draw.create', onDrawCreate);
+    return () => {
+      map.current?.remove();
+    };
+  }, []); // Empty dependency array to run only once
+
+  // Attach event listeners
+  useEffect(() => {
+    if (!map.current) return;
+
+    map.current.on('draw.create', handleDrawCreate);
+    map.current.on('draw.update', handleDrawUpdate);
     map.current.on('click', handleMapClick);
     map.current.on('mousedown', handleFurnitureMouseDown);
 
@@ -573,20 +593,18 @@ const Editor: React.FC = () => {
     });
 
     return () => {
-      map.current?.off('load', onLoad);
-      map.current?.off('draw.create', onDrawCreate);
+      map.current?.off('draw.create', handleDrawCreate);
+        map.current?.off('draw.update', handleDrawUpdate);
       map.current?.off('click', handleMapClick);
       map.current?.off('mousedown', handleFurnitureMouseDown);
-      map.current?.remove();
+      map.current?.off('mouseup', () => map.current?.dragPan.enable());
     };
-  }, [handleMapClick, handleFurnitureMouseDown, handleDrawCreate, mode]);
+  }, [handleDrawCreate, handleDrawUpdate, handleMapClick, handleFurnitureMouseDown, mode]);
 
   // Initialize map layers
   const initializeMapLayers = useCallback(() => {
     if (!map.current) return;
-    console.log('Initializing map layers');
 
-    // Walls source and layer
     map.current.addSource('walls', {
       type: 'geojson',
       data: wallFeatures,
@@ -604,7 +622,6 @@ const Editor: React.FC = () => {
       },
     });
 
-    // Rooms source and layer
     map.current.addSource('rooms', {
       type: 'geojson',
       data: roomFeatures,
@@ -620,7 +637,22 @@ const Editor: React.FC = () => {
       },
     });
 
-    // Furniture source and layers
+    map.current.addLayer({
+        id: 'room-labels',
+        type: 'symbol',
+        source: 'rooms',
+        layout: {
+            'text-field': ['get', 'name'],
+            'text-size': 16,
+            'text-anchor': 'center',
+        },
+        paint: {
+            'text-color': '#000',
+            'text-halo-color': '#fff',
+            'text-halo-width': 1,
+        },
+    })
+
     map.current.addSource('furniture', {
       type: 'geojson',
       data: furnitureFeatures,
@@ -666,61 +698,72 @@ const Editor: React.FC = () => {
   // Handle furniture resize and rotate markers
   useEffect(() => {
     if (!map.current || !selectedFurniture || mode !== 'edit_furniture') {
-      document.querySelectorAll('.furniture-marker').forEach((el) => el.remove());
+      markersRef.current.forEach((marker) => marker.remove());
+      markersRef.current = [];
       return;
     }
 
-    const markers = createFurnitureMarkers(map.current, selectedFurniture, updateFurnitureTransform);
-    return () => markers.forEach((marker) => marker.remove());
-  }, [selectedFurniture, mode]);
+    createFurnitureMarkers(map.current, selectedFurniture, updateFurnitureTransform);
 
-  // Update sources
-  useEffect(() => {
+    return () => {
+      markersRef.current.forEach((marker) => marker.remove());
+      markersRef.current = [];
+    };
+  }, [selectedFurniture, mode, updateFurnitureTransform, createFurnitureMarkers]);
+
+    // Update sources
+    useEffect(() => {
     if (map.current && map.current.getSource('walls') && map.current.isStyleLoaded()) {
-      (map.current.getSource('walls') as mapboxgl.GeoJSONSource).setData(wallFeatures);
+        // Validate wallFeatures
+        if (wallFeatures.type === 'FeatureCollection' && Array.isArray(wallFeatures.features)) {
+        (map.current.getSource('walls') as mapboxgl.GeoJSONSource).setData(wallFeatures);
+        } else {
+        console.warn('Invalid wallFeatures data:', wallFeatures);
+        }
     }
-  }, [wallFeatures]);
+    }, [wallFeatures]);
 
-  useEffect(() => {
+    useEffect(() => {
     if (map.current && map.current.getSource('rooms') && map.current.isStyleLoaded()) {
-      console.log('Updating rooms source:', roomFeatures);
-      (map.current.getSource('rooms') as mapboxgl.GeoJSONSource).setData(roomFeatures);
+        if (roomFeatures.type === 'FeatureCollection' && Array.isArray(roomFeatures.features)) {
+        (map.current.getSource('rooms') as mapboxgl.GeoJSONSource).setData(roomFeatures);
+        } else {
+        console.warn('Invalid roomFeatures data:', roomFeatures);
+        }
     }
-  }, [roomFeatures]);
+    }, [roomFeatures]);
 
-  useEffect(() => {
+    useEffect(() => {
     if (map.current && map.current.getSource('furniture') && map.current.isStyleLoaded()) {
-      (map.current.getSource('furniture') as mapboxgl.GeoJSONSource).setData(furnitureFeatures);
+        if (furnitureFeatures.type === 'FeatureCollection' && Array.isArray(furnitureFeatures.features)) {
+        (map.current.getSource('furniture') as mapboxgl.GeoJSONSource).setData(furnitureFeatures);
+        } else {
+        console.warn('Invalid furnitureFeatures data:', furnitureFeatures);
+        }
     }
-  }, [furnitureFeatures]);
+    }, [furnitureFeatures]);
 
-  // Handle drag and drop for placing furniture
+  // Handle drag and drop
   useEffect(() => {
     const container = mapContainer.current;
     if (!container) return;
 
-    const handleDropWrapper = (e: DragEvent) => handleDrop(e);
-    const handleDragOver = (e: DragEvent) => e.preventDefault();
-
-    container.addEventListener('drop', handleDropWrapper);
-    container.addEventListener('dragover', handleDragOver);
+    container.addEventListener('drop', handleDrop);
+    container.addEventListener('dragover', (e) => e.preventDefault());
 
     return () => {
-      container.removeEventListener('drop', handleDropWrapper);
-      container.removeEventListener('dragover', handleDragOver);
+      container.removeEventListener('drop', handleDrop);
+      container.removeEventListener('dragover', (e) => e.preventDefault());
     };
-  }, []);
+  }, [handleDrop]);
 
   // Render
   return (
     <ErrorBoundary>
       <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-700">
-        {/* Main Content */}
         <div className="flex flex-1 overflow-hidden">
-          {/* Left Layers Panel */}
           <div className="w-64 bg-white dark:bg-gray-900 shadow-md p-4 overflow-y-auto">
             <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">Layers</h2>
-            {/* Walls */}
             <div className="mb-2">
               <div
                 className="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-700 rounded cursor-pointer"
@@ -745,7 +788,6 @@ const Editor: React.FC = () => {
                 </div>
               )}
             </div>
-            {/* Rooms */}
             <div className="mb-2">
               <div
                 className="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-700 rounded cursor-pointer"
@@ -774,7 +816,6 @@ const Editor: React.FC = () => {
                 </div>
               )}
             </div>
-            {/* Furniture */}
             <div>
               <div
                 className="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-700 rounded cursor-pointer"
@@ -802,12 +843,10 @@ const Editor: React.FC = () => {
             </div>
           </div>
 
-          {/* Map Container */}
           <div className="flex-1">
             <div ref={mapContainer} className="w-full h-full" />
           </div>
 
-          {/* Right Properties Panel */}
           <div className="w-64 bg-white dark:bg-gray-900 shadow-md p-4 overflow-y-auto">
             <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">Properties</h2>
             {selectedFeature && selectedFeature.properties?.type === 'room' && (
@@ -816,10 +855,8 @@ const Editor: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
                   <input
                     type="text"
-                    value={selectedFeature.properties.name}
-                    onChange={(e) =>
-                      updateRoomProperties({ ...selectedFeature.properties, name: e.target.value })
-                    }
+                    value={selectedFeature.properties.name || ''}
+                    onChange={(e) => updateRoomProperties({ name: e.target.value })}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -828,9 +865,7 @@ const Editor: React.FC = () => {
                   <input
                     type="color"
                     value={selectedFeature.properties.color || '#ff0000'}
-                    onChange={(e) =>
-                      updateRoomProperties({ ...selectedFeature.properties, color: e.target.value })
-                    }
+                    onChange={(e) => updateRoomProperties({ color: e.target.value })}
                     className="w-full h-10 border border-gray-300 rounded-md"
                   />
                 </div>
@@ -838,10 +873,8 @@ const Editor: React.FC = () => {
                   <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
                     <input
                       type="checkbox"
-                      checked={selectedFeature.properties.bookable}
-                      onChange={(e) =>
-                        updateRoomProperties({ ...selectedFeature.properties, bookable: e.target.checked })
-                      }
+                      checked={selectedFeature.properties.bookable || false}
+                      onChange={(e) => updateRoomProperties({ bookable: e.target.checked })}
                       className="h-4 w-4 text-blue-500"
                     />
                     Bookable
@@ -851,10 +884,8 @@ const Editor: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Capacity</label>
                   <input
                     type="number"
-                    value={selectedFeature.properties.capacity}
-                    onChange={(e) =>
-                      updateRoomProperties({ ...selectedFeature.properties, capacity: Number(e.target.value) })
-                    }
+                    value={selectedFeature.properties.capacity || 0}
+                    onChange={(e) => updateRoomProperties({ capacity: Number(e.target.value) })}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -862,13 +893,33 @@ const Editor: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Purpose</label>
                   <input
                     type="text"
-                    value={selectedFeature.properties.purpose}
-                    onChange={(e) =>
-                      updateRoomProperties({ ...selectedFeature.properties, purpose: e.target.value })
-                    }
+                    value={selectedFeature.properties.purpose || ''}
+                    onChange={(e) => updateRoomProperties({ purpose: e.target.value })}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+                {/* Icon */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Icon</label>
+                  <input
+                    type="text"
+                    value={selectedFeature.properties.icon || ''}
+                    onChange={(e) => updateRoomProperties({ icon: e.target.value })}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                {/* Delete */}
+                <button
+                  onClick={() => {
+                    setRoomFeatures((prev) => ({
+                      ...prev,
+                      features: prev.features.filter((f) => f.id !== selectedFeatureId),
+                    }));
+                    setSelectedFeatureId(null);
+                  }}
+                  className="mt-5 mb-8 w-full bg-red-600 text-white p-2 rounded-md hover:bg-red-700 transition font-medium">
+                    Delete Room
+                </button>
               </div>
             )}
             {selectedFurniture && mode === 'edit_furniture' && (
@@ -880,7 +931,7 @@ const Editor: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Rotation (degrees)</label>
                   <input
                     type="number"
-                    value={selectedFurniture.properties.orientation}
+                    value={selectedFurniture.properties.orientation || 0}
                     onChange={(e) => updateFurnitureTransform({ orientation: Number(e.target.value) })}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                   />
@@ -889,7 +940,7 @@ const Editor: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Scale X</label>
                   <input
                     type="number"
-                    value={selectedFurniture.properties.scaleX}
+                    value={selectedFurniture.properties.scaleX || 1}
                     step="0.1"
                     min="0.1"
                     onChange={(e) => updateFurnitureTransform({ scaleX: Number(e.target.value) })}
@@ -900,7 +951,7 @@ const Editor: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Scale Y</label>
                   <input
                     type="number"
-                    value={selectedFurniture.properties.scaleY}
+                    value={selectedFurniture.properties.scaleY || 1}
                     step="0.1"
                     min="0.1"
                     onChange={(e) => updateFurnitureTransform({ scaleY: Number(e.target.value) })}
@@ -921,17 +972,14 @@ const Editor: React.FC = () => {
           </div>
         </div>
 
-        {/* Bottom Toolbar */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-700 shadow-lg p-4 flex items-center gap-4 overflow-x-auto">
+        <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-700 shadow-lg p-4 flex items-center gap-4 overflow-x-auto w-fit rounded-lg mx-auto mb-4">
           <div className="flex items-center gap-2">
             <label className="text-sm font-medium text-gray-700">Mode:</label>
             <select
               value={mode}
               onChange={(e) => {
                 const newMode = e.target.value as EditorMode;
-                console.log('Dropdown changed, new mode:', newMode);
                 setMode(newMode);
-                console.log('setMode called with:', newMode);
                 draw.current?.changeMode(
                   newMode === 'draw_wall'
                     ? 'draw_line_string'
@@ -985,4 +1033,4 @@ const Editor: React.FC = () => {
   );
 };
 
-export default Editor;
+export default React.memo(Editor);
