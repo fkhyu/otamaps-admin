@@ -7,8 +7,13 @@ import * as turf from '@turf/turf';
 import { Feature, FeatureCollection, Polygon, LineString } from 'geojson';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
+// import { createClient } from '@supabase/supabase-js';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
-// Constants
+
+const supabase = createClientComponentClient();
+
+// Constants 
 const DEFAULT_CENTER: [number, number] = [24.8182, 60.1842];
 const DEFAULT_ZOOM = 17;
 const WALL_HEIGHT = 10;
@@ -117,6 +122,7 @@ const Editor: React.FC = () => {
     rooms: true,
     furniture: true,
   });
+  const [mapLoaded, setMapLoaded] = useState(false);
 
   const selectedFeature = useMemo(() => {
     return roomFeatures.features.find((f) => f.id === selectedFeatureId) || null;
@@ -209,7 +215,7 @@ const Editor: React.FC = () => {
     []
   );
 
-  const handleDrawCreate = useCallback((e: any) => {
+  const handleDrawCreate = useCallback(async (e: any) => {
     if (!e.features || !e.features[0] || !e.features[0].geometry) {
         console.warn('Invalid draw.create event:', e);
         return;
@@ -282,6 +288,26 @@ const Editor: React.FC = () => {
         ...prev,
         features: [...prev.features, roomFeature],
         }));
+        
+        // Add room to supabase 'rooms' table
+        const { data, error } = await supabase
+            .from('rooms')
+            .insert([
+                {
+                    id: uniqueId,
+                    room_number: roomFeatures.features.length + 1, // TODO: let user set the room number
+                    title: roomFeature.properties.name,
+                    description: roomFeature.properties.purpose,
+                    seats: roomFeature.properties.capacity,
+                    // type: roomFeature.properties.room_type,
+                    // equipment: roomFeature.properties.equipment,
+                    bookable: roomFeature.properties.bookable,
+                    geometry: roomFeature.geometry,
+                },
+            ])
+            .select();
+
+        // console.log('Inserted room into Supabase:', data, error);
 
         setSelectedFeatureId(uniqueId);
         setTimeout(() => {
@@ -405,16 +431,43 @@ const Editor: React.FC = () => {
     [selectedFurniture, createFurnitureMarkers]
   );
 
-  const updateRoomProperties = useCallback((properties: Partial<RoomFeature['properties']>) => {
-  if (!selectedFeatureId) return;
+  const updateRoomProperties = useCallback(
+    async (properties: Partial<RoomFeature['properties']>) => {
+      if (!selectedFeatureId) return;
+      
+      console.log('Updating room properties:', properties);
 
-    setRoomFeatures((prev) => ({
+      // Update local state
+      setRoomFeatures((prev) => ({
         ...prev,
         features: prev.features.map((f) =>
-        f.id === selectedFeatureId ? { ...f, properties: { ...f.properties, ...properties } } : f
+          f.id === selectedFeatureId ? { ...f, properties: { ...f.properties, ...properties } } : f
         ),
-    }));
-    }, [selectedFeatureId]);
+      }));
+
+      // Update in Supabase
+      const updatePayload: any = {};
+      if (properties.name !== undefined) updatePayload.title = properties.name;
+      if (properties.color !== undefined) updatePayload.color = properties.color;
+      if (properties.bookable !== undefined) updatePayload.bookable = properties.bookable;
+      if (properties.capacity !== undefined) updatePayload.seats = properties.capacity;
+      if (properties.purpose !== undefined) updatePayload.description = properties.purpose;
+
+      if (Object.keys(updatePayload).length > 0) {
+        console.log('Updating room in Supabase:', updatePayload);
+        const { data, error } = await supabase
+          .from('rooms')
+          .update(updatePayload)
+          .eq('id', selectedFeatureId)
+          .select();
+        console.log('Updated room in Supabase:', data, error);
+        if (error) {
+          console.error('Error updating room in Supabase:', error);
+        }
+      }
+    },
+    [selectedFeatureId]
+  );
 
   const handleExportGeoJSON = useCallback(() => {
     const exportFile = (data: FeatureCollection, filename: string) => {
@@ -567,6 +620,7 @@ const Editor: React.FC = () => {
 
     map.current.on('load', () => {
       initializeMapLayers();
+      setMapLoaded(true);
     });
 
     return () => {
@@ -757,6 +811,38 @@ const Editor: React.FC = () => {
     };
   }, [handleDrop]);
 
+  // Fetch rooms from Supabase on mount
+  useEffect(() => {
+    const fetchRooms = async () => {
+      const { data, error } = await supabase.from('rooms').select('*');
+      if (error) {
+        console.error('Error fetching rooms:', error);
+        return;
+      }
+      if (data) {
+        setRoomFeatures({
+          type: 'FeatureCollection',
+          features: data.map((row) => ({
+            type: 'Feature',
+            id: row.id,
+            geometry: row.geometry,
+            properties: {
+              type: 'room',
+              name: row.title,
+              color: row.color || '#ff0000',
+              bookable: row.bookable,
+              capacity: row.seats,
+              avEquipment: row.avEquipment || [],
+              purpose: row.description,
+              icon: row.icon || '🏢',
+            },
+          })),
+        });
+      }
+    };
+    fetchRooms();
+  }, [mapLoaded]);
+
   // Render
   return (
     <ErrorBoundary>
@@ -873,7 +959,7 @@ const Editor: React.FC = () => {
                   <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
                     <input
                       type="checkbox"
-                      checked={selectedFeature.properties.bookable || false}
+                      checked={false}
                       onChange={(e) => updateRoomProperties({ bookable: e.target.checked })}
                       className="h-4 w-4 text-blue-500"
                     />
@@ -910,12 +996,19 @@ const Editor: React.FC = () => {
                 </div>
                 {/* Delete */}
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     setRoomFeatures((prev) => ({
                       ...prev,
                       features: prev.features.filter((f) => f.id !== selectedFeatureId),
                     }));
                     setSelectedFeatureId(null);
+                    const { error } = await supabase
+                        .from('rooms')
+                        .delete()
+                        .eq('id', selectedFeatureId);
+                    if (error) {
+                      console.error('Error deleting room:', error);
+                    }
                   }}
                   className="mt-5 mb-8 w-full bg-red-600 text-white p-2 rounded-md hover:bg-red-700 transition font-medium">
                     Delete Room
