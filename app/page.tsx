@@ -14,8 +14,8 @@ export default async function Home() {
   }
 
   return (
-    <div>
-      <h1>Welcome, {session.user.email}</h1>
+    <div className="flex h-screen w-full items-center justify-center flex-col">
+      <h1 className="text-3xl font-medium">Welcome, {session.user.email}</h1>
     </div>
   );
 }
