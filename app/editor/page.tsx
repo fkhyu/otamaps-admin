@@ -101,7 +101,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
 
 const Editor: React.FC = () => {
   const featureIdCounter = useRef(0);
-  const generateUniqueId = (prefix: string) => `${prefix}-${Date.now()}-${featureIdCounter.current++}`;
+  const generateUniqueId = () => crypto.randomUUID();
 
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -258,6 +258,19 @@ const Editor: React.FC = () => {
             features: [...prev.features, wallFeature],
         }));
 
+        // Add wall to supabase 'rooms' table
+        const { data, error } = await supabase
+            .from('features')
+            .insert([
+                {
+                    id: uniqueId,
+                    geometry: wallFeature.geometry,
+                    // floor: currentFloor,
+                    type: 'wall',
+                },
+            ])
+            .select();
+
         setTimeout(() => {
             draw.current?.changeMode('draw_line_string');
         }, 0);
@@ -370,6 +383,8 @@ const Editor: React.FC = () => {
           }),
         }));
       };
+
+      
 
       const onMouseUp = () => {
         map.current?.off('mousemove', onMouseMove);
@@ -619,7 +634,6 @@ const Editor: React.FC = () => {
     map.current.addControl(draw.current);
 
     map.current.on('load', () => {
-      initializeMapLayers();
       setMapLoaded(true);
     });
 
@@ -659,28 +673,39 @@ const Editor: React.FC = () => {
   const initializeMapLayers = useCallback(() => {
     if (!map.current) return;
 
-    map.current.addSource('walls', {
-      type: 'geojson',
-      data: wallFeatures,
-    });
-    map.current.addLayer({
+    const safeAddSource = (id: string, data: GeoJSON.FeatureCollection) => {
+      if (!map.current!.getSource(id)) {
+        map.current!.addSource(id, {
+          type: 'geojson',
+          data,
+        });
+      }
+    };
+
+    const safeAddLayer = (layerId: string, layerConfig: mapboxgl.Layer) => {
+      if (!map.current!.getLayer(layerId)) {
+        map.current!.addLayer(layerConfig);
+      }
+    };
+
+    // Walls
+    safeAddSource('walls', wallFeatures);
+    safeAddLayer('walls', {
       id: 'walls',
       type: 'fill-extrusion',
       source: 'walls',
       filter: ['==', ['get', 'type'], 'wall'],
       paint: {
-        'fill-extrusion-color': '#4a4a4a',
+        'fill-extrusion-color': '#fffce0',
         'fill-extrusion-height': ['get', 'height'],
         'fill-extrusion-base': 0,
         'fill-extrusion-opacity': 0.9,
       },
     });
 
-    map.current.addSource('rooms', {
-      type: 'geojson',
-      data: roomFeatures,
-    });
-    map.current.addLayer({
+    // Rooms
+    safeAddSource('rooms', roomFeatures);
+    safeAddLayer('rooms', {
       id: 'rooms',
       type: 'fill',
       source: 'rooms',
@@ -691,27 +716,25 @@ const Editor: React.FC = () => {
       },
     });
 
-    map.current.addLayer({
-        id: 'room-labels',
-        type: 'symbol',
-        source: 'rooms',
-        layout: {
-            'text-field': ['get', 'name'],
-            'text-size': 16,
-            'text-anchor': 'center',
-        },
-        paint: {
-            'text-color': '#000',
-            'text-halo-color': '#fff',
-            'text-halo-width': 1,
-        },
-    })
-
-    map.current.addSource('furniture', {
-      type: 'geojson',
-      data: furnitureFeatures,
+    safeAddLayer('room-labels', {
+      id: 'room-labels',
+      type: 'symbol',
+      source: 'rooms',
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-size': 16,
+        'text-anchor': 'center',
+      },
+      paint: {
+        'text-color': '#000',
+        'text-halo-color': '#fff',
+        'text-halo-width': 1,
+      },
     });
-    map.current.addLayer({
+
+    // Furniture
+    safeAddSource('furniture', furnitureFeatures);
+    safeAddLayer('furniture', {
       id: 'furniture',
       type: 'fill-extrusion',
       source: 'furniture',
@@ -724,7 +747,8 @@ const Editor: React.FC = () => {
       },
       metadata: { interactive: true },
     });
-    map.current.addLayer({
+
+    safeAddLayer('doors', {
       id: 'doors',
       type: 'fill-extrusion',
       source: 'furniture',
@@ -737,7 +761,8 @@ const Editor: React.FC = () => {
       },
       metadata: { interactive: true },
     });
-    map.current.addLayer({
+
+    safeAddLayer('furniture-selected', {
       id: 'furniture-selected',
       type: 'line',
       source: 'furniture',
@@ -748,6 +773,7 @@ const Editor: React.FC = () => {
       },
     });
   }, [wallFeatures, roomFeatures, furnitureFeatures, selectedFurniture]);
+
 
   // Handle furniture resize and rotate markers
   useEffect(() => {
@@ -840,8 +866,39 @@ const Editor: React.FC = () => {
         });
       }
     };
+    const fetchWalls = async () => {
+      const { data, error } = await supabase.from('features').select('*');
+      if (error) {
+        console.error('Error fetching walls:', error);
+        return;
+      }
+      if (data) {
+        setWallFeatures({
+          type: 'FeatureCollection',
+          features: data.map((row) => ({
+            type: 'Feature',
+            id: row.id,
+            geometry: row.geometry,
+            properties: {
+              type: 'wall',
+              width: row.width || DEFAULT_WALL_WIDTH,
+              height: WALL_HEIGHT,
+            },
+          })),
+        });
+      }
+    };
     fetchRooms();
-  }, [mapLoaded]);
+    fetchWalls();
+    
+  }, [mapLoaded],);
+
+  useEffect(() => {
+    if (mapLoaded) {
+      initializeMapLayers();
+    }
+  }, [mapLoaded, wallFeatures, roomFeatures, furnitureFeatures]);
+
 
   // Render
   return (
