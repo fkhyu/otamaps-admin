@@ -51,8 +51,10 @@ interface FurnitureFeature extends Feature<Polygon> {
 
 interface RoomFeature extends Feature<Polygon> {
   properties: {
+    id: string;
     type: 'room';
     name: string;
+    number: string;
     color: string;
     bookable: boolean;
     capacity: number;
@@ -125,8 +127,12 @@ const Editor: React.FC = () => {
   const [mapLoaded, setMapLoaded] = useState(false);
 
   const selectedFeature = useMemo(() => {
-    return roomFeatures.features.find((f) => f.id === selectedFeatureId) || null;
-    }, [roomFeatures, selectedFeatureId]);
+    return (
+      roomFeatures.features.find((f) => f.id === selectedFeatureId) ||
+      wallFeatures.features.find((f) => f.id === selectedFeatureId) ||
+      null
+    );
+  }, [roomFeatures, wallFeatures, selectedFeatureId]);
 
 
   // Debounce utility for property updates
@@ -258,7 +264,7 @@ const Editor: React.FC = () => {
             features: [...prev.features, wallFeature],
         }));
 
-        // Add wall to supabase 'rooms' table
+        // Add wall to supabase 'features' table
         const { data, error } = await supabase
             .from('features')
             .insert([
@@ -287,8 +293,10 @@ const Editor: React.FC = () => {
         id: uniqueId,
         geometry: newFeature.geometry as Polygon,
         properties: {
+            id: uniqueId,
             type: 'room',
             name: `Room ${roomFeatures.features.length + 1}`,
+            number: "",
             color: '#ff0000',
             bookable: true,
             capacity: 10,
@@ -315,7 +323,7 @@ const Editor: React.FC = () => {
                     // type: roomFeature.properties.room_type,
                     // equipment: roomFeature.properties.equipment,
                     bookable: roomFeature.properties.bookable,
-                    geometry: roomFeature.geometry,
+                    geometry: roomFeature.geometry
                 },
             ])
             .select();
@@ -341,18 +349,19 @@ const Editor: React.FC = () => {
     ];
 
     const featuresAtPoint = map.current.queryRenderedFeatures(bbox, {
-      layers: ['rooms', 'furniture', 'doors'],
+      layers: ['rooms', 'furniture', 'walls'],
     });
 
     if (mode === 'edit_furniture') {
       const furnitureFeature = featuresAtPoint.find(
-        (f) => f.properties?.type === 'furniture' || f.properties?.type === 'door'
+        (f) => f.properties?.type === 'furniture'
       ) as FurnitureFeature | undefined;
       setSelectedFurniture(furnitureFeature || null);
       setSelectedFeatureId(null);
     } else {
+      // console.log('Map click features:', featuresAtPoint);
       const roomFeature = featuresAtPoint.find((f) => f.properties?.type === 'room') as RoomFeature | undefined;
-      setSelectedFeatureId(roomFeature ? roomFeature.id as string : null);
+      setSelectedFeatureId(roomFeature ? roomFeature.properties.id as string : null);
       setSelectedFurniture(null);
     }
   }, [mode]);
@@ -464,6 +473,7 @@ const Editor: React.FC = () => {
       // Update in Supabase
       const updatePayload: any = {};
       if (properties.name !== undefined) updatePayload.title = properties.name;
+      if (properties.number !== undefined) updatePayload.room_number = properties.number;
       if (properties.color !== undefined) updatePayload.color = properties.color;
       if (properties.bookable !== undefined) updatePayload.bookable = properties.bookable;
       if (properties.capacity !== undefined) updatePayload.seats = properties.capacity;
@@ -576,6 +586,11 @@ const Editor: React.FC = () => {
         setSelectedFeatureId(feature.id as string); // <- use ID here
         setSelectedFurniture(null);
         setMode('simple_select');
+    } else if (feature.properties?.type === 'wall') {
+        setSelectedFeatureId(feature.id as string); // <- use ID here
+        setSelectedFurniture(null);
+        // setMode('simple_select');
+        console.log('Selected wall feature:', feature, feature.properties.type);
     }
   }, []);
 
@@ -851,8 +866,10 @@ const Editor: React.FC = () => {
             id: row.id,
             geometry: row.geometry,
             properties: {
+              id: row.id,
               type: 'room',
               name: row.title,
+              number: row.room_number || '',
               color: row.color || '#ff0000',
               bookable: row.bookable,
               capacity: row.seats,
@@ -863,6 +880,7 @@ const Editor: React.FC = () => {
           })),
         });
       }
+      console.log('Fetched rooms from Supabase:', data);
     };
     const fetchWalls = async () => {
       const { data, error } = await supabase.from('features').select('*');
@@ -907,7 +925,7 @@ const Editor: React.FC = () => {
             <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">Layers</h2>
             <div className="mb-2">
               <div
-                className="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-700 rounded cursor-pointer"
+                className="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-700 rounded-lg cursor-pointer"
                 onClick={() => toggleLayer('walls')}
               >
                 <span className="text-sm font-medium">Walls</span>
@@ -918,7 +936,7 @@ const Editor: React.FC = () => {
                   {wallFeatures.features.map((feature) => (
                     <div
                       key={feature.id}
-                      className={`p-2 text-sm cursor-pointer hover:bg-gray-200 rounded ${
+                      className={`p-2 text-sm cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800 rounded ${
                         selectedFeature?.id === feature.id ? 'bg-blue-100' : ''
                       }`}
                       onClick={() => handleLayerSelect(feature)}
@@ -931,7 +949,7 @@ const Editor: React.FC = () => {
             </div>
             <div className="mb-2">
               <div
-                className="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-700 rounded cursor-pointer"
+                className="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-700 rounded-lg cursor-pointer"
                 onClick={() => toggleLayer('rooms')}
               >
                 <span className="text-sm font-medium">Rooms</span>
@@ -945,7 +963,7 @@ const Editor: React.FC = () => {
                     roomFeatures.features.map((feature) => (
                       <div
                         key={feature.id}
-                        className={`p-2 text-sm cursor-pointer hover:bg-gray-200 rounded ${
+                        className={`p-2 text-sm cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800 rounded ${
                           selectedFeature?.id === feature.id ? 'bg-blue-100' : ''
                         }`}
                         onClick={() => handleLayerSelect(feature)}
@@ -959,7 +977,7 @@ const Editor: React.FC = () => {
             </div>
             <div>
               <div
-                className="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-700 rounded cursor-pointer"
+                className="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-700 rounded-lg cursor-pointer"
                 onClick={() => toggleLayer('furniture')}
               >
                 <span className="text-sm font-medium">Furniture</span>
@@ -970,7 +988,7 @@ const Editor: React.FC = () => {
                   {furnitureFeatures.features.map((feature) => (
                     <div
                       key={feature.id}
-                      className={`p-2 text-sm cursor-pointer hover:bg-gray-200 rounded ${
+                      className={`p-2 text-sm cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800 rounded ${
                         selectedFurniture?.id === feature.id ? 'bg-blue-100' : ''
                       }`}
                       onClick={() => handleLayerSelect(feature)}
@@ -996,10 +1014,24 @@ const Editor: React.FC = () => {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
                   <input
-                    type="text"
-                    value={selectedFeature.properties.name || ''}
-                    onChange={(e) => updateRoomProperties({ name: e.target.value })}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  type="text"
+                  value={selectedFeature.properties.name || ''}
+                  onChange={(e) => {
+                    const allowed = /^[0-9\/]*$/;
+                    if (allowed.test(e.target.value)) {
+                      updateRoomProperties({ name: e.target.value });
+                    }
+                  }}
+                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 ">Room number</label>
+                  <input
+                    type="number"
+                    value={selectedFeature.properties.number || ''}
+                    onChange={(e) => updateRoomProperties({ number: e.target.value })}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                 </div>
                 <div>
@@ -1012,10 +1044,10 @@ const Editor: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700"> 
                     <input
                       type="checkbox"
-                      checked={false}
+                      checked={selectedFeature.properties.bookable || false}
                       onChange={(e) => updateRoomProperties({ bookable: e.target.checked })}
                       className="h-4 w-4 text-blue-500"
                     />
@@ -1029,7 +1061,7 @@ const Editor: React.FC = () => {
                     value={selectedFeature.properties.capacity || 0}
                     onChange={(e) => updateRoomProperties({ capacity: Number(e.target.value) })}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-                  />
+                  /> s
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Purpose</label>
@@ -1109,6 +1141,26 @@ const Editor: React.FC = () => {
                 </div>
               </div>
             )}
+            {selectedFeature && selectedFeature.properties?.type == 'wall' && (
+              <button
+                onClick={async () => {
+                  setWallFeatures((prev) => ({
+                    ...prev,
+                    features: prev.features.filter((f) => f.id !== selectedFeatureId),
+                  }));
+                  setSelectedFeatureId(null);
+                  const { error } = await supabase
+                      .from('features')
+                      .delete()
+                      .eq('id', selectedFeatureId);
+                  if (error) {
+                    console.error('Error deleting wall:', error);
+                  }
+                }}
+                className="mt-5 mb-8 w-full bg-red-600 text-white p-2 rounded-md hover:bg-red-700 transition font-medium">
+                  Delete Wall
+              </button>
+            )}
             {!selectedFeature && !selectedFurniture && (
               <p className="text-sm text-gray-500">Select a layer to edit its properties.</p>
             )}
@@ -1121,7 +1173,7 @@ const Editor: React.FC = () => {
           </div>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-700 shadow-lg p-4 flex items-center gap-4 overflow-x-auto w-fit rounded-lg mx-auto mb-4">
+        <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-700 shadow-lg p-4 flex items-center gap-4 overflow-x-auto w-fit rounded-2xl mx-auto mb-4">
           <div className="flex items-center gap-2">
             <label className="text-sm font-medium text-gray-700">Mode:</label>
             <select
