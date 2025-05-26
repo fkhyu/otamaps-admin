@@ -338,6 +338,149 @@ const Editor: React.FC = () => {
     }
     }, [mode, wallWidth, roomFeatures]);
 
+  const setRoomMarkers = useCallback((map: mapboxgl.Map, room: RoomFeature | null) => {
+    // Remove previous markers
+    markersRef.current.forEach((marker) => marker.remove());
+    markersRef.current = [];
+
+    // Remove any preview polygon layer if it exists
+    if (map.getSource('room-preview')) {
+      map.removeLayer('room-preview');
+      map.removeSource('room-preview');
+    }
+
+    if (!room || !room.geometry || !room.geometry.coordinates) {
+      return null;
+    }
+
+    // For each corner of the outer ring (first ring in coordinates), skip the last point (duplicate of first)
+    const corners = room.geometry.coordinates[0];
+    const markers: mapboxgl.Marker[] = [];
+
+    // Keep a copy of the current coordinates for preview
+    let previewCoordinates = [...corners];
+
+    // Only create markers for unique corners (skip last if duplicate of first)
+    const numCorners = corners.length > 1 && corners[0][0] === corners[corners.length - 1][0] && corners[0][1] === corners[corners.length - 1][1]
+      ? corners.length - 1
+      : corners.length;
+
+    for (let idx = 0; idx < numCorners; idx++) {
+      const [lng, lat] = corners[idx];
+      const el = document.createElement('div');
+      el.className = 'room-corner-marker';
+      el.style.backgroundColor = room.properties.color || '#ff0000';
+      el.style.border = '2px solid #ffffff';
+      el.style.width = '16px';
+      el.style.height = '16px';
+      el.style.borderRadius = '50%';
+      el.style.cursor = 'move';
+      el.style.boxShadow = '0 0 4px rgba(0,0,0,0.5)';
+      el.title = `${room.properties.name} - Corner ${idx + 1}`;
+
+      // Make the marker draggable
+      const marker = new mapboxgl.Marker({ element: el, draggable: true })
+        .setLngLat([lng, lat])
+        .addTo(map);
+
+      // Show preview polygon while dragging
+      marker.on('drag', () => {
+        const lngLat = marker.getLngLat();
+        previewCoordinates = corners.map((coord, coordIdx) =>
+          coordIdx === idx ? [lngLat.lng, lngLat.lat] : coord
+        );
+        // Ensure the polygon is closed
+        if (
+          previewCoordinates.length > 2 &&
+          (previewCoordinates[0][0] !== previewCoordinates[previewCoordinates.length - 1][0] ||
+            previewCoordinates[0][1] !== previewCoordinates[previewCoordinates.length - 1][1])
+        ) {
+          previewCoordinates[previewCoordinates.length - 1] = [...previewCoordinates[0]];
+        }
+        const previewGeoJSON = {
+          type: 'FeatureCollection',
+          features: [
+            {
+              type: 'Feature',
+              geometry: {
+                type: 'Polygon',
+                coordinates: [previewCoordinates],
+              },
+              properties: {},
+            },
+          ],
+        };
+
+        // Remove previous preview
+        if (map.getSource('room-preview')) {
+          (map.getSource('room-preview') as mapboxgl.GeoJSONSource).setData(previewGeoJSON);
+        } else {
+          map.addSource('room-preview', {
+            type: 'geojson',
+            data: previewGeoJSON,
+          });
+          map.addLayer({
+            id: 'room-preview',
+            type: 'fill',
+            source: 'room-preview',
+            paint: {
+              'fill-color': '#00bfff',
+              'fill-opacity': 0.3,
+            },
+          });
+        }
+      });
+
+      marker.on('dragend', async () => {
+        const lngLat = marker.getLngLat();
+        // Update only this corner in the geometry
+        const newCoordinates = room.geometry.coordinates.map((ring, ringIdx) =>
+          ringIdx === 0
+            ? ring.map((coord, coordIdx) =>
+                coordIdx === idx ? [lngLat.lng, lngLat.lat] : coord
+              )
+            : ring
+        );
+        // Ensure the polygon is closed
+        if (
+          newCoordinates[0].length > 2 &&
+          (newCoordinates[0][0][0] !== newCoordinates[0][newCoordinates[0].length - 1][0] ||
+            newCoordinates[0][0][1] !== newCoordinates[0][newCoordinates[0].length - 1][1])
+        ) {
+          newCoordinates[0][newCoordinates[0].length - 1] = [...newCoordinates[0][0]];
+        }
+        const newGeometry = {
+          ...room.geometry,
+          coordinates: newCoordinates,
+        };
+        setRoomFeatures((prev) => ({
+          ...prev,
+          features: prev.features.map((f) =>
+            f.id === room.id ? { ...f, geometry: newGeometry } : f
+          ),
+        }));
+        // Update geometry in Supabase
+        const { error } = await supabase
+          .from('rooms')
+          .update({ geometry: { type: 'Polygon', coordinates: newCoordinates } })
+          .eq('id', room.properties.id);
+        if (error) {
+          console.log('Error updating room geometry:', error);
+        }
+        // Remove preview polygon after drag ends
+        // if (map.getSource('room-preview')) {
+        //   map.removeLayer('room-preview');
+        //   map.removeSource('room-preview');
+        // }
+      });
+
+      markers.push(marker);
+    }
+
+    markersRef.current = markers;
+    return markers;
+  }, []);
+
   const handleMapClick = useCallback((e: mapboxgl.MapMouseEvent) => {
     if (!map.current) return;
     e.preventDefault();
@@ -362,9 +505,27 @@ const Editor: React.FC = () => {
       // console.log('Map click features:', featuresAtPoint);
       const roomFeature = featuresAtPoint.find((f) => f.properties?.type === 'room') as RoomFeature | undefined;
       setSelectedFeatureId(roomFeature ? roomFeature.properties.id as string : null);
+      setRoomMarkers(map.current, roomFeature as RoomFeature);
       setSelectedFurniture(null);
     }
   }, [mode]);
+  useEffect(() => {
+    if (!map.current) return;
+
+    // When a room is selected, show its markers.
+    if (selectedFeature && selectedFeature.properties?.type === 'room') {
+      setRoomMarkers(map.current, selectedFeature as RoomFeature);
+    } else {
+      // When room is deselected, remove any room markers and preview polygon.
+      markersRef.current.forEach((marker) => marker.remove());
+      markersRef.current = [];
+
+      if (map.current.getSource('room-preview')) {
+        map.current.removeLayer('room-preview');
+        map.current.removeSource('room-preview');
+      }
+    }
+  }, [selectedFeatureId, selectedFeature, setRoomMarkers]);
 
   const handleFurnitureMouseDown = useCallback((e: mapboxgl.MapMouseEvent) => {
     if (mode !== 'edit_furniture' || !map.current || !selectedFurniture) return;
@@ -712,7 +873,7 @@ const Editor: React.FC = () => {
         'fill-extrusion-color': '#fffce0',
         'fill-extrusion-height': ['get', 'height'],
         'fill-extrusion-base': 0,
-        'fill-extrusion-opacity': 0.9,
+        'fill-extrusion-opacity': 1,
       },
     });
 
@@ -937,7 +1098,7 @@ const Editor: React.FC = () => {
                     <div
                       key={feature.id}
                       className={`p-2 text-sm cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800 rounded ${
-                        selectedFeature?.id === feature.id ? 'bg-blue-100' : ''
+                        selectedFeature?.id === feature.id ? 'bg-blue-100 dark:bg-blue-950' : ''
                       }`}
                       onClick={() => handleLayerSelect(feature)}
                     >
@@ -964,7 +1125,7 @@ const Editor: React.FC = () => {
                       <div
                         key={feature.id}
                         className={`p-2 text-sm cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800 rounded ${
-                          selectedFeature?.id === feature.id ? 'bg-blue-100' : ''
+                          selectedFeature?.id === feature.id ? 'bg-blue-100 dark:bg-blue-950' : ''
                         }`}
                         onClick={() => handleLayerSelect(feature)}
                       >
@@ -989,7 +1150,7 @@ const Editor: React.FC = () => {
                     <div
                       key={feature.id}
                       className={`p-2 text-sm cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800 rounded ${
-                        selectedFurniture?.id === feature.id ? 'bg-blue-100' : ''
+                        selectedFurniture?.id === feature.id ? 'bg-blue-100 dark:bg-blue-950' : ''
                       }`}
                       onClick={() => handleLayerSelect(feature)}
                     >
@@ -1016,12 +1177,7 @@ const Editor: React.FC = () => {
                   <input
                   type="text"
                   value={selectedFeature.properties.name || ''}
-                  onChange={(e) => {
-                    const allowed = /^[0-9\/]*$/;
-                    if (allowed.test(e.target.value)) {
-                      updateRoomProperties({ name: e.target.value });
-                    }
-                  }}
+                  onChange={(e) => {updateRoomProperties({ name: e.target.value });}}
                   className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -1030,7 +1186,12 @@ const Editor: React.FC = () => {
                   <input
                     type="number"
                     value={selectedFeature.properties.number || ''}
-                    onChange={(e) => updateRoomProperties({ number: e.target.value })}
+                    onChange={(e) => {
+                    const allowed = /^[0-9\/]*$/;
+                    if (allowed.test(e.target.value)) {
+                      updateRoomProperties({ number: e.target.value });
+                    }
+                  }}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                 </div>
@@ -1080,6 +1241,31 @@ const Editor: React.FC = () => {
                     value={selectedFeature.properties.icon || ''}
                     onChange={(e) => updateRoomProperties({ icon: e.target.value })}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                {/* Geometry */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Geometry</label>
+                  <textarea
+                    value={JSON.stringify(selectedFeature.geometry, null, 2)}
+                    // readOnly
+                    onChange={async (e) => {
+                      const newGeometry = JSON.parse(e.target.value);
+                      setRoomFeatures((prev) => ({
+                        ...prev,
+                        features: prev.features.map((f) =>
+                          f.id === selectedFeatureId ? { ...f, geometry: newGeometry } : f
+                        ),
+                      }));
+                      const { error } = await supabase
+                        .from('rooms')
+                        .update({ geometry: newGeometry })
+                        .eq('id', selectedFeatureId);
+                      if (error) {
+                        console.error('Error updating room geometry:', error);
+                      }
+                    }}
+                    className="w-full h-32 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 {/* Delete */}
