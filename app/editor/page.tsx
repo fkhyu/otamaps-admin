@@ -413,11 +413,11 @@ const Editor: React.FC = () => {
 
         // Remove previous preview
         if (map.getSource('room-preview')) {
-          (map.getSource('room-preview') as mapboxgl.GeoJSONSource).setData(previewGeoJSON);
+          (map.getSource('room-preview') as mapboxgl.GeoJSONSource).setData(previewGeoJSON as FeatureCollection);
         } else {
           map.addSource('room-preview', {
             type: 'geojson',
-            data: previewGeoJSON,
+            data: previewGeoJSON as FeatureCollection,
           });
           map.addLayer({
             id: 'room-preview',
