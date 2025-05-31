@@ -145,80 +145,60 @@ const Editor: React.FC = () => {
   }, []);
 
   // Utility Functions
+  // Create draggable and rotatable markers for furniture
   const createFurnitureMarkers = useCallback(
-    (map: mapboxgl.Map, furniture: FurnitureFeature, updateTransform: (transform: { orientation?: number; scaleX?: number; scaleY?: number }) => void) => {
+    (map: mapboxgl.Map, furniture: FurnitureFeature, updateTransform: (t: any) => void) => {
+      // Remove previous markers
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current = [];
 
-      if (!furniture.geometry) {
-        console.warn('Furniture feature missing geometry:', furniture);
-        return;
-      }
+      if (!furniture.geometry || furniture.geometry.type !== 'Polygon') return;
 
-      const bbox = turf.bbox(furniture);
-      const [minX, minY, maxX, maxY] = bbox;
-      const centroid = turf.centroid(furniture).geometry.coordinates;
+      // Get centroid for rotation handle
+      const centroid = turf.centroid(furniture).geometry.coordinates as [number, number];
 
-      const corners = [
-        { position: 'top-left', lng: minX, lat: maxY, cursor: 'nwse-resize' },
-        { position: 'top-right', lng: maxX, lat: maxY, cursor: 'nesw-resize' },
-        { position: 'bottom-right', lng: maxX, lat: minY, cursor: 'nwse-resize' },
-        { position: 'bottom-left', lng: minX, lat: minY, cursor: 'nesw-resize' },
-      ];
+      // Move marker (center)
+      const moveEl = document.createElement('div');
+      moveEl.className = 'furniture-move-marker';
+      moveEl.style.background = '#fff';
+      moveEl.style.border = '2px solid #0074d9';
+      moveEl.style.width = '18px';
+      moveEl.style.height = '18px';
+      moveEl.style.borderRadius = '50%';
+      moveEl.style.cursor = 'move';
+      moveEl.style.boxShadow = '0 0 4px rgba(0,0,0,0.5)';
+      moveEl.title = 'Move furniture';
 
-      const rotationHandleOffset = 0.0001;
-      const rotationHandle = {
-        position: 'rotate',
-        lng: maxX + rotationHandleOffset,
-        lat: maxY,
-        cursor: 'grab',
-      };
+      const moveMarker = new mapboxgl.Marker({ element: moveEl, draggable: true })
+        .setLngLat(centroid)
+        .addTo(map);
 
-      const allMarkers = [...corners, rotationHandle];
+      moveMarker.on('dragend', (e) => {
+        const newCenter = moveMarker.getLngLat();
+        // Calculate translation delta
+        const oldCenter = centroid;
+        const deltaLng = newCenter.lng - oldCenter[0];
+        const deltaLat = newCenter.lat - oldCenter[1];
 
-      allMarkers.forEach(({ position, lng, lat, cursor }) => {
-        const el = document.createElement('div');
-        el.className = 'furniture-marker';
-        el.style.backgroundColor = position === 'rotate' ? '#800080' : '#ffa500';
-        el.style.width = '12px';
-        el.style.height = '12px';
-        el.style.borderRadius = position === 'rotate' ? '50%' : '0';
-        el.style.cursor = cursor;
-        el.style.border = '2px solid #ffffff';
-        el.style.boxShadow = '0 0 4px rgba(0,0,0,0.5)';
-        el.style.zIndex = '1000';
-
-        const marker = new mapboxgl.Marker({ element: el, draggable: true }).setLngLat([lng, lat]);
-
-        marker.on('drag', () => {
-          const lngLat = marker.getLngLat();
-          const newBbox = [...bbox];
-          if (position === 'rotate') {
-            const newAngle = Math.atan2(lngLat.lat - centroid[1], lngLat.lng - centroid[0]) * (180 / Math.PI);
-            updateTransform({ orientation: newAngle });
-          } else {
-            if (position.includes('left')) newBbox[0] = lngLat.lng;
-            if (position.includes('right')) newBbox[2] = lngLat.lng;
-            if (position.includes('top')) newBbox[3] = lngLat.lat;
-            if (position.includes('bottom')) newBbox[1] = lngLat.lat;
-
-            const originalWidth = maxX - minX;
-            const originalHeight = maxY - minY;
-            const newWidth = newBbox[2] - newBbox[0];
-            const newHeight = newBbox[3] - newBbox[1];
-
-            const scaleX = newWidth / originalWidth;
-            const scaleY = newHeight / originalHeight;
-
-            updateTransform({ scaleX: Math.max(0.1, scaleX), scaleY: Math.max(0.1, scaleY) });
-          }
-        });
-
-        markersRef.current.push(marker);
-        marker.addTo(map);
+        // Move all coordinates by delta
+        const newGeom = {
+          ...furniture.geometry,
+          coordinates: furniture.geometry.coordinates.map((ring) =>
+            ring.map(([lng, lat]) => [lng + deltaLng, lat + deltaLat])
+          ),
+        };
+        updateTransform({});
+        setFurnitureFeatures((prev) => ({
+          ...prev,
+          features: prev.features.map((f) =>
+            f.id === furniture.id ? { ...f, geometry: newGeom } : f
+          ),
+        }));
       });
+
+      markersRef.current.push(moveMarker);
     },
-    []
+    [setFurnitureFeatures]
   );
 
   const handleDrawCreate = useCallback(async (e: any) => {
@@ -576,32 +556,56 @@ const Editor: React.FC = () => {
           if (f.id === selectedFurniture.id && f.geometry) {
             let newGeom = f.geometry as Polygon;
             const newProps = { ...f.properties };
+            const updatedFeature = { ...f, geometry: newGeom, properties: newProps };
 
-            if (transform.orientation !== undefined) {
+            // Only update orientation if provided
+            if (typeof transform.orientation === 'number' && !isNaN(transform.orientation)) {
+              const delta = transform.orientation - (f.properties?.orientation ?? 0);
               newProps.orientation = transform.orientation;
               const centroid = turf.centroid(f).geometry.coordinates;
-              newGeom = turf.transformRotate(f as Feature<Polygon>, transform.orientation - f.properties?.orientation, {
+              newGeom = turf.transformRotate(f as Feature<Polygon>, delta, {
                 pivot: centroid,
               }).geometry as Polygon;
+
+              console.log('Updated orientation:', transform.orientation, 'for feature:', f.id);
             }
 
-            if (transform.scaleX !== undefined || transform.scaleY !== undefined) {
-              newProps.scaleX = transform.scaleX !== undefined ? transform.scaleX : f.properties?.scaleX;
-              newProps.scaleY = transform.scaleY !== undefined ? transform.scaleY : f.properties?.scaleY;
+            // Only update scaleX/scaleY if provided and valid
+            let scaleX = typeof transform.scaleX === 'number' && !isNaN(transform.scaleX) && transform.scaleX > 0
+              ? transform.scaleX
+              : f.properties?.scaleX ?? 1;
+            let scaleY = typeof transform.scaleY === 'number' && !isNaN(transform.scaleY) && transform.scaleY > 0
+              ? transform.scaleY
+              : f.properties?.scaleY ?? 1;
+
+            if (
+              (typeof transform.scaleX === 'number' && !isNaN(transform.scaleX)) ||
+              (typeof transform.scaleY === 'number' && !isNaN(transform.scaleY))
+            ) {
+              newProps.scaleX = scaleX;
+              newProps.scaleY = scaleY;
               const centroid = turf.centroid(f).geometry.coordinates;
-              newGeom = turf.transformScale(
-                f.geometry as Polygon,
-                newProps.scaleX / f.properties?.scaleX,
-                { origin: centroid }
-              ) as Polygon;
-              newGeom = turf.transformScale(
-                newGeom,
-                newProps.scaleY / f.properties?.scaleY,
-                { origin: centroid }
-              ) as Polygon;
+              // Scale X
+              if (scaleX !== f.properties?.scaleX) {
+                newGeom = turf.transformScale(
+                  newGeom,
+                  scaleX / (f.properties?.scaleX ?? 1),
+                  { origin: centroid }
+                ) as Polygon;
+              }
+              // Scale Y
+              if (scaleY !== f.properties?.scaleY) {
+                newGeom = turf.transformScale(
+                  newGeom,
+                  scaleY / (f.properties?.scaleY ?? 1),
+                  { origin: centroid }
+                ) as Polygon;
+              }
             }
 
-            return { ...f, geometry: newGeom, properties: newProps };
+            setSelectedFurniture(updatedFeature as FurnitureFeature);
+
+            return { ...f, geometry: newGeom, properties: newProps, updatedFeature };
           }
           return f;
         });
@@ -1297,7 +1301,7 @@ const Editor: React.FC = () => {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Rotation (degrees)</label>
                   <input
-                    type="number"
+                    type="text"
                     value={selectedFurniture.properties.orientation || 0}
                     onChange={(e) => updateFurnitureTransform({ orientation: Number(e.target.value) })}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
