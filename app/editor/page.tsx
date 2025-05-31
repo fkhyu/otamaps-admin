@@ -9,6 +9,7 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 // import { createClient } from '@supabase/supabase-js';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import transformRotate from '@turf/transform-rotate';
 
 
 const supabase = createClientComponentClient();
@@ -38,12 +39,7 @@ interface WallFeature extends Feature<Polygon> {
 
 interface FurnitureFeature extends Feature<Polygon> {
   properties: {
-    type: 'furniture' | 'door';
-    item: string;
-    emoji: string;
-    orientation: number;
-    height: number;
-    shape: 'cube' | 'cylinder';
+    type: 'furniture';
     scaleX: number;
     scaleY: number;
   };
@@ -157,6 +153,18 @@ const Editor: React.FC = () => {
       // Get centroid for rotation handle
       const centroid = turf.centroid(furniture).geometry.coordinates as [number, number];
 
+      // Create a circular rotation slider around the move marker
+      const sliderRadiusPx = 40;
+      const sliderEl = document.createElement('div');
+      sliderEl.className = 'furniture-rotation-slider';
+      sliderEl.style.position = 'absolute';
+      sliderEl.style.left = `-${sliderRadiusPx - 9}px`;
+      sliderEl.style.top = `-${sliderRadiusPx - 9}px`;
+      sliderEl.style.width = `${sliderRadiusPx * 2}px`;
+      sliderEl.style.height = `${sliderRadiusPx * 2}px`;
+      sliderEl.style.pointerEvents = 'auto';
+      sliderEl.style.zIndex = '10';
+
       // Move marker (center)
       const moveEl = document.createElement('div');
       moveEl.className = 'furniture-move-marker';
@@ -169,9 +177,99 @@ const Editor: React.FC = () => {
       moveEl.style.boxShadow = '0 0 4px rgba(0,0,0,0.5)';
       moveEl.title = 'Move furniture';
 
+      // SVG for circular slider
+      sliderEl.innerHTML = `
+        <svg width="${sliderRadiusPx * 2}" height="${sliderRadiusPx * 2}" style="pointer-events:none;">
+          <circle cx="${sliderRadiusPx}" cy="${sliderRadiusPx}" r="${sliderRadiusPx - 4}" fill="none" stroke="#0074d9" stroke-width="3" opacity="0.5"/>
+          <circle id="slider-handle" cx="${sliderRadiusPx}" cy="8" r="8" fill="#fff" stroke="#0074d9" stroke-width="2" style="pointer-events:all;cursor:pointer;" />
+        </svg>
+      `;
+
+      // Prevent pointer events from propagating from slider/handle to move marker
+      sliderEl.addEventListener('mousedown', (e) => e.stopPropagation());
+      sliderEl.addEventListener('touchstart', (e) => e.stopPropagation());
+      // Attach slider to move marker element
+      moveEl.style.position = 'relative';
+      moveEl.appendChild(sliderEl);
+
+      // Handle drag on the slider handle
+      const svg = sliderEl.querySelector('svg');
+      const handle = sliderEl.querySelector('#slider-handle') as SVGCircleElement;
+      if (handle) {
+        handle.addEventListener('mousedown', (e) => e.stopPropagation());
+        handle.addEventListener('touchstart', (e) => e.stopPropagation());
+      }
+
+      let dragging = false;
+
+      const getAngleFromEvent = (event: MouseEvent | TouchEvent) => {
+        const rect = svg!.getBoundingClientRect();
+        const cx = rect.left + sliderRadiusPx;
+        const cy = rect.top + sliderRadiusPx;
+        let clientX = 0, clientY = 0;
+        if ('touches' in event && event.touches.length > 0) {
+          clientX = event.touches[0].clientX;
+          clientY = event.touches[0].clientY;
+        } else if ('clientX' in event) {
+          clientX = event.clientX;
+          clientY = event.clientY;
+        }
+        const dx = clientX - cx;
+        const dy = clientY - cy;
+        let angle = Math.atan2(dx, -dy) * (180 / Math.PI); // 0deg = north, 90 = east, 180 = south, -90 = west
+        if (angle < 0) angle += 360;
+        return angle;
+      };
+
+      const setHandlePosition = (angle: number) => {
+        const rad = ((angle - 0) * Math.PI) / 180;
+        const r = sliderRadiusPx - 8;
+        const x = sliderRadiusPx + r * Math.sin(rad);
+        const y = sliderRadiusPx - r * Math.cos(rad);
+        handle.setAttribute('cx', x.toString());
+        handle.setAttribute('cy', y.toString());
+      };
+
+      // Initial handle position (0deg = north)
+      setHandlePosition(0);
+
+      const onDrag = (event: MouseEvent | TouchEvent) => {
+        if (!dragging) return;
+        event.preventDefault();
+        const angle = getAngleFromEvent(event);
+        setHandlePosition(angle);
+        updateFurnitureTransform({ rotation: Number(angle) });
+        console.log('Dragging handle at angle:', angle);
+      };
+
+      const onDragEnd = () => {
+        dragging = false;
+        window.removeEventListener('mousemove', onDrag);
+        window.removeEventListener('touchmove', onDrag);
+        window.removeEventListener('mouseup', onDragEnd);
+        window.removeEventListener('touchend', onDragEnd);
+        console.log('Drag ended');
+      };
+
+      handle.addEventListener('mousedown', (e) => {
+        dragging = true;
+        window.addEventListener('mousemove', onDrag);
+        window.addEventListener('mouseup', onDragEnd);
+      });
+      handle.addEventListener('touchstart', (e) => {
+        dragging = true;
+        window.addEventListener('touchmove', onDrag);
+        window.addEventListener('touchend', onDragEnd);
+      });
+
       const moveMarker = new mapboxgl.Marker({ element: moveEl, draggable: true })
         .setLngLat(centroid)
         .addTo(map);
+
+      // Remove slider when marker is removed
+      moveMarker.on('remove', () => {
+        moveEl.removeChild(sliderEl);
+      });
 
       moveMarker.on('dragend', (e) => {
         const newCenter = moveMarker.getLngLat();
@@ -547,27 +645,33 @@ const Editor: React.FC = () => {
     }
   }, [mode, selectedFurniture]);
 
+  const rotateFeature = (
+    feature: Feature<Polygon>,
+    angle: number,
+    pivot: [number, number]
+  ): Feature<Polygon> => {
+    // Turf expects the pivot as [lng, lat]
+    return transformRotate(feature, angle, { pivot });
+  };
+
   const updateFurnitureTransform = useCallback(
-    debounce((transform: { orientation?: number; scaleX?: number; scaleY?: number }) => {
+    debounce(async (transform: { rotation?: number; scaleX?: number; scaleY?: number }) => {
       if (!selectedFurniture || !map.current) return;
 
       setFurnitureFeatures((prev) => {
+        let updatedFeature: FurnitureFeature | undefined;
         const newFeatures = prev.features.map((f) => {
           if (f.id === selectedFurniture.id && f.geometry) {
             let newGeom = f.geometry as Polygon;
             const newProps = { ...f.properties };
-            const updatedFeature = { ...f, geometry: newGeom, properties: newProps };
 
-            // Only update orientation if provided
-            if (typeof transform.orientation === 'number' && !isNaN(transform.orientation)) {
-              const delta = transform.orientation - (f.properties?.orientation ?? 0);
-              newProps.orientation = transform.orientation;
-              const centroid = turf.centroid(f).geometry.coordinates;
-              newGeom = turf.transformRotate(f as Feature<Polygon>, delta, {
-                pivot: centroid,
-              }).geometry as Polygon;
-
-              console.log('Updated orientation:', transform.orientation, 'for feature:', f.id);
+            // Apply rotation directly to geometry if rotation is provided
+            if (typeof transform.rotation === 'number' && !isNaN(transform.rotation)) {
+              const centroid = turf.centroid(f).geometry.coordinates as [number, number];
+              newGeom = rotateFeature(f as Feature<Polygon>, transform.rotation, centroid).geometry as Polygon;
+              // Store the rotation in properties if needed
+              newProps.rotation = transform.rotation;
+              console.log('Rotated furniture feature:', f.id, 'by', transform.rotation, 'degrees');
             }
 
             // Only update scaleX/scaleY if provided and valid
@@ -603,22 +707,46 @@ const Editor: React.FC = () => {
               }
             }
 
-            setSelectedFurniture(updatedFeature as FurnitureFeature);
+            updatedFeature = { ...f, geometry: newGeom, properties: newProps } as FurnitureFeature;
+            setSelectedFurniture(updatedFeature);
 
-            return { ...f, geometry: newGeom, properties: newProps, updatedFeature };
+            return updatedFeature;
           }
           return f;
         });
 
-        const updatedFeature = newFeatures.find((f) => f.id === selectedFurniture.id) as FurnitureFeature;
         if (updatedFeature) {
           createFurnitureMarkers(map.current!, updatedFeature, updateFurnitureTransform);
         }
 
         return { ...prev, features: newFeatures };
       });
+
+      // Update in Supabase (async, after state update)
+      // Only update geometry and scaleX/scaleY, NOT orientation
+      const updatePayload: any = {};
+      if (typeof transform.scaleX === 'number') updatePayload.scaleX = transform.scaleX;
+      if (typeof transform.scaleY === 'number') updatePayload.scaleY = transform.scaleY;
+      if (typeof transform.rotation === 'number') updatePayload.rotation = transform.rotation;
+
+      // Always update geometry if rotation or scale changed
+      if (typeof transform.rotation === 'number' || typeof transform.scaleX === 'number' || typeof transform.scaleY === 'number') {
+        const updated = furnitureFeatures.features.find(f => f.id === selectedFurniture.id);
+        if (updated) updatePayload.geometry = updated.geometry;
+      }
+
+      if (Object.keys(updatePayload).length > 0) {
+        const { data, error } = await supabase
+          .from('features')
+          .update(updatePayload)
+          .eq('id', selectedFurniture.id)
+          .select();
+        if (error) {
+          console.log('Error updating furniture in Supabase:', error);
+        }
+      }
     }, 100),
-    [selectedFurniture, createFurnitureMarkers]
+    [selectedFurniture, createFurnitureMarkers, furnitureFeatures]
   );
 
   const updateRoomProperties = useCallback(
@@ -653,7 +781,7 @@ const Editor: React.FC = () => {
           .select();
         console.log('Updated room in Supabase:', data, error);
         if (error) {
-          console.error('Error updating room in Supabase:', error);
+          console.log('Error updating room in Supabase:', error);
         }
       }
     },
@@ -676,24 +804,24 @@ const Editor: React.FC = () => {
     exportFile(furnitureFeatures, 'furniture.geojson');
   }, [wallFeatures, roomFeatures, furnitureFeatures]);
 
-  const handleDrop = useCallback((e: DragEvent) => {
+  const handleDrop = useCallback(async (e: DragEvent) => {
     e.preventDefault();
     if (!map.current || !mapContainer.current) return;
 
     const json = e.dataTransfer?.getData('application/json');
     if (!json) return;
 
-    const data = JSON.parse(json);
+    const jsondata = JSON.parse(json);
     const rect = mapContainer.current.getBoundingClientRect();
     const point: [number, number] = [e.clientX - rect.left, e.clientY - rect.top];
 
     const lngLat = map.current.unproject(point);
     const pointGeo = turf.point([lngLat.lng, lngLat.lat]);
 
-    const sizes = FURNITURE_SIZES[data.id as keyof typeof FURNITURE_SIZES];
+    const sizes = FURNITURE_SIZES[jsondata.id as keyof typeof FURNITURE_SIZES];
     if (!sizes) return;
 
-    const shape = furnitureLibrary.find((item) => item.id === data.id)?.shape || 'cube';
+    const shape = furnitureLibrary.find((item) => item.id === jsondata.id)?.shape || 'cube';
 
     let furniturePolygon;
     if (shape === 'cube') {
@@ -721,12 +849,7 @@ const Editor: React.FC = () => {
       id: generateUniqueId(),
       geometry: furniturePolygon?.geometry as Polygon,
       properties: {
-        type: data.id === 'cube' ? 'door' : 'furniture',
-        item: data.id,
-        emoji: data.icon,
-        orientation: 0,
-        height: sizes.height,
-        shape: shape,
+        type: 'furniture',
         scaleX: 1,
         scaleY: 1,
       },
@@ -736,6 +859,21 @@ const Editor: React.FC = () => {
       ...prev,
       features: [...prev.features, furnitureFeature],
     }));
+
+    // Add furniture to Supabase 'features' table
+    const { data, error } = await supabase
+      .from('features')
+      .insert([
+        {
+          id: furnitureFeature.id,
+          geometry: furnitureFeature.geometry,
+          // floor: 'joku',
+          type: furnitureFeature.properties.type,
+        },
+      ])
+      .select();
+
+      console.log('Inserted furniture into Supabase:', data);
   }, []);
 
   const handleLayerSelect = useCallback((feature: Feature) => {
@@ -1048,7 +1186,7 @@ const Editor: React.FC = () => {
       console.log('Fetched rooms from Supabase:', data);
     };
     const fetchWalls = async () => {
-      const { data, error } = await supabase.from('features').select('*');
+      const { data, error } = await supabase.from('features').select('*').eq('type', 'wall');
       if (error) {
         console.error('Error fetching walls:', error);
         return;
@@ -1069,6 +1207,35 @@ const Editor: React.FC = () => {
         });
       }
     };
+
+    const fetchFurniture = async () => {
+      const { data, error } = await supabase.from('features').select('*').eq('type', 'furniture');
+      if (error) {
+        console.error('Error fetching furniture:', error);
+        return;
+      }
+      if (data) {
+        setFurnitureFeatures({
+          type: 'FeatureCollection',
+          features: data.map((row) => ({
+            type: 'Feature',
+            id: row.id,
+            geometry: row.geometry,
+            properties: {
+              type: row.type || 'furniture',
+              item: row.item || '',
+              emoji: row.emoji || '🪑',
+              height: row.height || 1,
+              shape: row.shape || 'cube',
+              scaleX: row.scaleX || 1,
+              scaleY: row.scaleY || 1,
+            },
+          })),
+        });
+      }
+      console.log('Fetched furniture from Supabase:', data);
+    };
+    fetchFurniture();
     fetchRooms();
     fetchWalls();
     
@@ -1296,14 +1463,14 @@ const Editor: React.FC = () => {
             {selectedFurniture && mode === 'edit_furniture' && (
               <div className="space-y-4">
                 <h3 className="text-md font-semibold text-gray-800">
-                  {selectedFurniture.properties.item} Properties
+                  Properties
                 </h3>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Rotation (degrees)</label>
                   <input
-                    type="text"
-                    value={selectedFurniture.properties.orientation || 0}
-                    onChange={(e) => updateFurnitureTransform({ orientation: Number(e.target.value) })}
+                    type="number"
+                    value={0}
+                    onChange={(e) => updateFurnitureTransform({ rotation: Number(e.target.value) })}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -1327,6 +1494,31 @@ const Editor: React.FC = () => {
                     min="0.1"
                     onChange={(e) => updateFurnitureTransform({ scaleY: Number(e.target.value) })}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                {/* Geometry */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Geometry</label>
+                  <textarea
+                    value={JSON.stringify(selectedFurniture?.geometry, null, 2)}
+                    // readOnly
+                    onChange={async (e) => {
+                      const newGeometry = JSON.parse(e.target.value);
+                      setRoomFeatures((prev) => ({
+                        ...prev,
+                        features: prev.features.map((f) =>
+                          f.id === selectedFurniture.id ? { ...f, geometry: newGeometry } : f
+                        ),
+                      }));
+                      const { error } = await supabase
+                        .from('feautres')
+                        .update({ geometry: newGeometry })
+                        .eq('id', selectedFurniture.id);
+                      if (error) {
+                        console.error('Error updating room geometry:', error);
+                      }
+                    }}
+                    className="w-full h-32 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
