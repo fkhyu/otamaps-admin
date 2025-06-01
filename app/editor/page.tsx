@@ -42,6 +42,7 @@ interface FurnitureFeature extends Feature<Polygon> {
     type: 'furniture';
     scaleX: number;
     scaleY: number;
+    rotation?: number;
   };
 }
 
@@ -121,6 +122,7 @@ const Editor: React.FC = () => {
     furniture: true,
   });
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [rotationInput, setRotationInput] = useState<number>(0);
 
   const selectedFeature = useMemo(() => {
     return (
@@ -677,6 +679,7 @@ const Editor: React.FC = () => {
 
   const updateFurnitureTransform = useCallback(
     debounce(async (transform: { rotation?: number; scaleX?: number; scaleY?: number }) => {
+      console.log('called updateFurnitureTransform with:', transform);
       if (!selectedFurniture || !map.current) return;
 
       setFurnitureFeatures((prev) => {
@@ -696,10 +699,10 @@ const Editor: React.FC = () => {
               const centroid = turf.centroid(f).geometry.coordinates as [number, number];
               // Always rotate from the original geometry
               const baseGeom = f.properties?.originalGeometry || f.geometry;
-              newGeom = transformRotate(
+              newGeom = rotateFeature(
                 { ...f, geometry: baseGeom },
                 transform.rotation,
-                { pivot: centroid }
+                centroid
               ).geometry as Polygon;
               newProps.rotation = transform.rotation;
               console.log('Rotated furniture feature:', f.id, 'to', transform.rotation, 'degrees');
@@ -1476,8 +1479,9 @@ const Editor: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Rotation (degrees)</label>
                   <input
                     type="number"
-                    value={0}
-                    onChange={(e) => updateFurnitureTransform({ rotation: Number(e.target.value) })}
+                    value={rotationInput}
+                    onChange={(e) => setRotationInput(Number(e.target.value))}
+                    onBlur={() => updateFurnitureTransform({ rotation: rotationInput })}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -1562,7 +1566,7 @@ const Editor: React.FC = () => {
           </div>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-700 shadow-lg p-4 flex items-center gap-4 overflow-x-auto w-fit rounded-2xl mx-auto mb-4">
+        <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-700 dark:border-1 dark:border-gray-600 shadow-lg p-4 flex items-center gap-4 overflow-x-auto w-fit rounded-2xl mx-auto mb-4">
           {mode === 'simple_select' && (
             <div className="flex items-center gap-3">
               {furnitureLibrary.map((item) => (
@@ -1572,7 +1576,7 @@ const Editor: React.FC = () => {
                   onDragStart={(e) => {
                     e.dataTransfer.setData('application/json', JSON.stringify(item));
                   }}
-                  className="flex items-center gap-2 p-2 bg-gray-100 border border-gray-200 rounded-md cursor-move hover:bg-gray-200 transition"
+                  className="flex items-center gap-2 p-2 bg-gray-100 border border-gray-200 rounded-md cursor-move hover:bg-gray-200 transition dark:bg-gray-600 dark:border-gray-600 dark:hover:bg-gray-800"
                 >
                   <span className="text-lg">{item.icon}</span>
                   <span className="text-sm">{item.name}</span>
