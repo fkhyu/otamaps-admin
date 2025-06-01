@@ -68,7 +68,7 @@ interface FurnitureItem {
 }
 
 // Editor Modes
-type EditorMode = 'draw_wall' | 'draw_room' | 'place_furniture' | 'edit_furniture' | 'simple_select';
+type EditorMode = 'simple_select';
 
 // Furniture Library
 const furnitureLibrary: FurnitureItem[] = [
@@ -108,7 +108,7 @@ const Editor: React.FC = () => {
   const markersRef = useRef<mapboxgl.Marker[]>([]);
 
   // State
-  const [mode, setMode] = useState<EditorMode>('draw_wall');
+  const [mode, setMode] = useState<EditorMode>('simple_select');
   const [wallFeatures, setWallFeatures] = useState<FeatureCollection>({ type: 'FeatureCollection', features: [] });
   const [roomFeatures, setRoomFeatures] = useState<FeatureCollection>({ type: 'FeatureCollection', features: [] });
   const [furnitureFeatures, setFurnitureFeatures] = useState<FeatureCollection>({ type: 'FeatureCollection', features: [] });
@@ -315,7 +315,7 @@ const Editor: React.FC = () => {
 
     processedFeatureIds.current.add(uniqueId);
 
-    if (mode === 'draw_wall' && newFeature.geometry.type === 'LineString') {
+    if (mode === 'simple_select' && newFeature.geometry.type === 'LineString') {
         try {
         const line = turf.lineString(newFeature.geometry.coordinates);
         const cleaned = turf.truncate(line, { precision: 10 });
@@ -362,7 +362,7 @@ const Editor: React.FC = () => {
         } catch (err) {
         console.error('Turf buffering error:', err);
         }
-    } else if (mode === 'draw_room' || (mode === 'draw_wall' && newFeature.geometry.type === 'Polygon')) {
+    } else if (mode === 'simple_select' || (mode === 'simple_select' && newFeature.geometry.type === 'Polygon')) {
         if (newFeature.geometry.type !== 'Polygon') {
         return;
         }
@@ -573,20 +573,41 @@ const Editor: React.FC = () => {
       layers: ['rooms', 'furniture', 'walls'],
     });
 
-    if (mode === 'edit_furniture') {
+    if (mode === 'simple_select') {
+      // Prioritize furniture, then room, then wall
       const furnitureFeature = featuresAtPoint.find(
         (f) => f.properties?.type === 'furniture'
       ) as FurnitureFeature | undefined;
-      setSelectedFurniture(furnitureFeature || null);
+      if (furnitureFeature) {
+        setSelectedFurniture(furnitureFeature);
+        setSelectedFeatureId(null);
+        return;
+      }
+
+      const roomFeature = featuresAtPoint.find(
+        (f) => f.properties?.type === 'room'
+      ) as RoomFeature | undefined;
+      if (roomFeature) {
+        setSelectedFeatureId(roomFeature.properties.id as string);
+        setSelectedFurniture(null);
+        setRoomMarkers(map.current, roomFeature as RoomFeature);
+        return;
+      }
+
+      const wallFeature = featuresAtPoint.find(
+        (f) => f.properties?.type === 'wall'
+      ) as WallFeature | undefined;
+      if (wallFeature) {
+        setSelectedFeatureId(wallFeature.id as string);
+        setSelectedFurniture(null);
+        return;
+      }
+
+      // If nothing found, clear selection
       setSelectedFeatureId(null);
-    } else {
-      // console.log('Map click features:', featuresAtPoint);
-      const roomFeature = featuresAtPoint.find((f) => f.properties?.type === 'room') as RoomFeature | undefined;
-      setSelectedFeatureId(roomFeature ? roomFeature.properties.id as string : null);
-      setRoomMarkers(map.current, roomFeature as RoomFeature);
       setSelectedFurniture(null);
     }
-  }, [mode]);
+  }, [mode, setRoomMarkers]);
   useEffect(() => {
     if (!map.current) return;
 
@@ -606,7 +627,7 @@ const Editor: React.FC = () => {
   }, [selectedFeatureId, selectedFeature, setRoomMarkers]);
 
   const handleFurnitureMouseDown = useCallback((e: mapboxgl.MapMouseEvent) => {
-    if (mode !== 'edit_furniture' || !map.current || !selectedFurniture) return;
+    if (mode !== 'simple_select' || !map.current || !selectedFurniture) return;
 
     const featuresAtPoint = map.current.queryRenderedFeatures(e.point, {
       layers: ['furniture', 'doors'],
@@ -665,16 +686,26 @@ const Editor: React.FC = () => {
             let newGeom = f.geometry as Polygon;
             const newProps = { ...f.properties };
 
-            // Apply rotation directly to geometry if rotation is provided
-            if (typeof transform.rotation === 'number' && !isNaN(transform.rotation)) {
-              const centroid = turf.centroid(f).geometry.coordinates as [number, number];
-              newGeom = rotateFeature(f as Feature<Polygon>, transform.rotation, centroid).geometry as Polygon;
-              // Store the rotation in properties if needed
-              newProps.rotation = transform.rotation;
-              console.log('Rotated furniture feature:', f.id, 'by', transform.rotation, 'degrees');
+            // --- Store original geometry if not present ---
+            if (!f.properties?.originalGeometry) {
+              newProps.originalGeometry = JSON.parse(JSON.stringify(f.geometry));
             }
 
-            // Only update scaleX/scaleY if provided and valid
+            // --- Handle rotation ---
+            if (typeof transform.rotation === 'number' && !isNaN(transform.rotation)) {
+              const centroid = turf.centroid(f).geometry.coordinates as [number, number];
+              // Always rotate from the original geometry
+              const baseGeom = f.properties?.originalGeometry || f.geometry;
+              newGeom = transformRotate(
+                { ...f, geometry: baseGeom },
+                transform.rotation,
+                { pivot: centroid }
+              ).geometry as Polygon;
+              newProps.rotation = transform.rotation;
+              console.log('Rotated furniture feature:', f.id, 'to', transform.rotation, 'degrees');
+            }
+
+            // --- Handle scaling ---
             let scaleX = typeof transform.scaleX === 'number' && !isNaN(transform.scaleX) && transform.scaleX > 0
               ? transform.scaleX
               : f.properties?.scaleX ?? 1;
@@ -721,30 +752,6 @@ const Editor: React.FC = () => {
 
         return { ...prev, features: newFeatures };
       });
-
-      // Update in Supabase (async, after state update)
-      // Only update geometry and scaleX/scaleY, NOT orientation
-      const updatePayload: any = {};
-      if (typeof transform.scaleX === 'number') updatePayload.scaleX = transform.scaleX;
-      if (typeof transform.scaleY === 'number') updatePayload.scaleY = transform.scaleY;
-      if (typeof transform.rotation === 'number') updatePayload.rotation = transform.rotation;
-
-      // Always update geometry if rotation or scale changed
-      if (typeof transform.rotation === 'number' || typeof transform.scaleX === 'number' || typeof transform.scaleY === 'number') {
-        const updated = furnitureFeatures.features.find(f => f.id === selectedFurniture.id);
-        if (updated) updatePayload.geometry = updated.geometry;
-      }
-
-      if (Object.keys(updatePayload).length > 0) {
-        const { data, error } = await supabase
-          .from('features')
-          .update(updatePayload)
-          .eq('id', selectedFurniture.id)
-          .select();
-        if (error) {
-          console.log('Error updating furniture in Supabase:', error);
-        }
-      }
     }, 100),
     [selectedFurniture, createFurnitureMarkers, furnitureFeatures]
   );
@@ -884,7 +891,7 @@ const Editor: React.FC = () => {
     if (feature.properties?.type === 'furniture' || feature.properties?.type === 'door') {
         setSelectedFurniture(feature as FurnitureFeature);
         setSelectedFeatureId(null);
-        setMode('edit_furniture');
+        setMode('simple_select');
     } else if (feature.properties?.type === 'room') {
         setSelectedFeatureId(feature.id as string); // <- use ID here
         setSelectedFurniture(null);
@@ -968,7 +975,7 @@ const Editor: React.FC = () => {
     map.current.on('mousedown', handleFurnitureMouseDown);
 
     map.current.on('mousedown', (e) => {
-      if (mode === 'edit_furniture') {
+      if (mode === 'simple_select') {
         map.current?.dragPan.disable();
       }
     });
@@ -1093,7 +1100,7 @@ const Editor: React.FC = () => {
 
   // Handle furniture resize and rotate markers
   useEffect(() => {
-    if (!map.current || !selectedFurniture || mode !== 'edit_furniture') {
+    if (!map.current || !selectedFurniture || mode !== 'simple_select') {
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current = [];
       return;
@@ -1460,7 +1467,7 @@ const Editor: React.FC = () => {
                 </button>
               </div>
             )}
-            {selectedFurniture && mode === 'edit_furniture' && (
+            {selectedFurniture && mode === 'simple_select' && (
               <div className="space-y-4">
                 <h3 className="text-md font-semibold text-gray-800">
                   Properties
@@ -1556,46 +1563,7 @@ const Editor: React.FC = () => {
         </div>
 
         <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-700 shadow-lg p-4 flex items-center gap-4 overflow-x-auto w-fit rounded-2xl mx-auto mb-4">
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-700">Mode:</label>
-            <select
-              value={mode}
-              onChange={(e) => {
-                const newMode = e.target.value as EditorMode;
-                setMode(newMode);
-                draw.current?.changeMode(
-                  (
-                    newMode === 'draw_wall'
-                      ? 'draw_line_string'
-                      : newMode === 'draw_room'
-                      ? 'draw_polygon'
-                      : 'simple_select'
-                  ) as any
-                );
-                if (newMode !== 'edit_furniture') setSelectedFurniture(null);
-              }}
-              className="p-2 border border-gray-300 dark:bg-gray-700 rounded-md focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="draw_wall">Draw Wall</option>
-              <option value="draw_room">Draw Room</option>
-              <option value="place_furniture">Place Furniture/Door</option>
-              <option value="edit_furniture">Edit Furniture</option>
-            </select>
-          </div>
-          {mode === 'draw_wall' && (
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-gray-700">Wall Width (m):</label>
-              <input
-                type="number"
-                value={wallWidth}
-                onChange={(e) => setWallWidth(Number(e.target.value))}
-                step="0.1"
-                min="0.1"
-                className="w-20 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          )}
-          {mode === 'place_furniture' && (
+          {mode === 'simple_select' && (
             <div className="flex items-center gap-3">
               {furnitureLibrary.map((item) => (
                 <div
