@@ -7,10 +7,8 @@ import * as turf from '@turf/turf';
 import { Feature, FeatureCollection, Polygon, LineString } from 'geojson';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
-// import { createClient } from '@supabase/supabase-js';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import transformRotate from '@turf/transform-rotate';
-
 
 const supabase = createClientComponentClient();
 
@@ -40,9 +38,15 @@ interface WallFeature extends Feature<Polygon> {
 interface FurnitureFeature extends Feature<Polygon> {
   properties: {
     type: 'furniture';
-    scaleX: number;
-    scaleY: number;
+    id?: string;
+    item?: string;
+    emoji?: string;
+    height?: number;
+    shape?: 'cube' | 'cylinder';
     rotation?: number;
+    scaleX?: number;
+    scaleY?: number;
+    originalGeometry?: Polygon;
   };
 }
 
@@ -124,6 +128,9 @@ const Editor: React.FC = () => {
   const [mapLoaded, setMapLoaded] = useState(false);
   const [rotationInput, setRotationInput] = useState<number>(0);
 
+  // Add a new state to track when all data is loaded
+  const [dataLoaded, setDataLoaded] = useState(false);
+
   const selectedFeature = useMemo(() => {
     return (
       roomFeatures.features.find((f) => f.id === selectedFeatureId) ||
@@ -131,7 +138,6 @@ const Editor: React.FC = () => {
       null
     );
   }, [roomFeatures, wallFeatures, selectedFeatureId]);
-
 
   // Debounce utility for property updates
   const debounce = useCallback((fn: (...args: any[]) => void, delay: number) => {
@@ -143,19 +149,18 @@ const Editor: React.FC = () => {
   }, []);
 
   // Utility Functions
-  // Create draggable and rotatable markers for furniture
   const createFurnitureMarkers = useCallback(
     (map: mapboxgl.Map, furniture: FurnitureFeature, updateTransform: (t: any) => void) => {
-      // Remove previous markers
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current = [];
 
-      if (!furniture.geometry || furniture.geometry.type !== 'Polygon') return;
+      if (!furniture.geometry || furniture.geometry.type !== 'Polygon' || !furniture.id) {
+        console.warn('Invalid furniture feature for markers:', furniture);
+        return;
+      }
 
-      // Get centroid for rotation handle
       const centroid = turf.centroid(furniture).geometry.coordinates as [number, number];
 
-      // Create a circular rotation slider around the move marker
       const sliderRadiusPx = 40;
       const sliderEl = document.createElement('div');
       sliderEl.className = 'furniture-rotation-slider';
@@ -167,7 +172,6 @@ const Editor: React.FC = () => {
       sliderEl.style.pointerEvents = 'auto';
       sliderEl.style.zIndex = '10';
 
-      // Move marker (center)
       const moveEl = document.createElement('div');
       moveEl.className = 'furniture-move-marker';
       moveEl.style.background = '#fff';
@@ -179,7 +183,6 @@ const Editor: React.FC = () => {
       moveEl.style.boxShadow = '0 0 4px rgba(0,0,0,0.5)';
       moveEl.title = 'Move furniture';
 
-      // SVG for circular slider
       sliderEl.innerHTML = `
         <svg width="${sliderRadiusPx * 2}" height="${sliderRadiusPx * 2}" style="pointer-events:none;">
           <circle cx="${sliderRadiusPx}" cy="${sliderRadiusPx}" r="${sliderRadiusPx - 4}" fill="none" stroke="#0074d9" stroke-width="3" opacity="0.5"/>
@@ -187,14 +190,11 @@ const Editor: React.FC = () => {
         </svg>
       `;
 
-      // Prevent pointer events from propagating from slider/handle to move marker
       sliderEl.addEventListener('mousedown', (e) => e.stopPropagation());
       sliderEl.addEventListener('touchstart', (e) => e.stopPropagation());
-      // Attach slider to move marker element
       moveEl.style.position = 'relative';
       moveEl.appendChild(sliderEl);
 
-      // Handle drag on the slider handle
       const svg = sliderEl.querySelector('svg');
       const handle = sliderEl.querySelector('#slider-handle') as SVGCircleElement;
       if (handle) {
@@ -218,7 +218,7 @@ const Editor: React.FC = () => {
         }
         const dx = clientX - cx;
         const dy = clientY - cy;
-        let angle = Math.atan2(dx, -dy) * (180 / Math.PI); // 0deg = north, 90 = east, 180 = south, -90 = west
+        let angle = Math.atan2(dx, -dy) * (180 / Math.PI);
         if (angle < 0) angle += 360;
         return angle;
       };
@@ -232,15 +232,14 @@ const Editor: React.FC = () => {
         handle.setAttribute('cy', y.toString());
       };
 
-      // Initial handle position (0deg = north)
-      setHandlePosition(0);
+      setHandlePosition(furniture.properties?.rotation || 0);
 
       const onDrag = (event: MouseEvent | TouchEvent) => {
-        if (!dragging) return;
+        if (!dragging || !selectedFurniture) return;
         event.preventDefault();
         const angle = getAngleFromEvent(event);
         setHandlePosition(angle);
-        updateFurnitureTransform({ rotation: Number(angle) });
+        updateTransform({ rotation: Number(angle) });
         console.log('Dragging handle at angle:', angle);
       };
 
@@ -250,15 +249,17 @@ const Editor: React.FC = () => {
         window.removeEventListener('touchmove', onDrag);
         window.removeEventListener('mouseup', onDragEnd);
         window.removeEventListener('touchend', onDragEnd);
-        console.log('Drag ended');
+        console.log('Drag ended', selectedFurniture, selectedFurniture?.id);
       };
 
       handle.addEventListener('mousedown', (e) => {
+        if (!selectedFurniture) return;
         dragging = true;
         window.addEventListener('mousemove', onDrag);
         window.addEventListener('mouseup', onDragEnd);
       });
       handle.addEventListener('touchstart', (e) => {
+        if (!selectedFurniture) return;
         dragging = true;
         window.addEventListener('touchmove', onDrag);
         window.addEventListener('touchend', onDragEnd);
@@ -268,19 +269,16 @@ const Editor: React.FC = () => {
         .setLngLat(centroid)
         .addTo(map);
 
-      // Remove slider when marker is removed
       moveMarker.on('remove', () => {
         moveEl.removeChild(sliderEl);
       });
 
       moveMarker.on('dragend', (e) => {
         const newCenter = moveMarker.getLngLat();
-        // Calculate translation delta
         const oldCenter = centroid;
         const deltaLng = newCenter.lng - oldCenter[0];
         const deltaLat = newCenter.lat - oldCenter[1];
 
-        // Move all coordinates by delta
         const newGeom = {
           ...furniture.geometry,
           coordinates: furniture.geometry.coordinates.map((ring) =>
@@ -298,18 +296,18 @@ const Editor: React.FC = () => {
 
       markersRef.current.push(moveMarker);
     },
-    [setFurnitureFeatures]
+    [setFurnitureFeatures, selectedFurniture]
   );
 
   const handleDrawCreate = useCallback(async (e: any) => {
     if (!e.features || !e.features[0] || !e.features[0].geometry) {
-        console.warn('Invalid draw.create event:', e);
-        return;
+      console.warn('Invalid draw.create event:', e);
+      return;
     }
     const newFeature = e.features[0];
 
     if (processedFeatureIds.current.has(newFeature.id)) {
-        return;
+      return;
     }
 
     const uniqueId = generateUniqueId();
@@ -318,112 +316,101 @@ const Editor: React.FC = () => {
     processedFeatureIds.current.add(uniqueId);
 
     if (mode === 'simple_select' && newFeature.geometry.type === 'LineString') {
-        try {
+      try {
         const line = turf.lineString(newFeature.geometry.coordinates);
         const cleaned = turf.truncate(line, { precision: 10 });
         const buffered = turf.buffer(cleaned, Math.max(0.1, wallWidth / 2), { units: 'meters' });
 
         if (!buffered || !buffered.geometry || buffered.geometry.type !== 'Polygon') {
-            console.warn('Invalid wall polygon:', buffered);
-            return;
+          console.warn('Invalid wall polygon:', buffered);
+          return;
         }
 
         const wallFeature: WallFeature = {
-            type: 'Feature',
-            id: uniqueId,
-            geometry: buffered.geometry as Polygon,
-            properties: {
+          type: 'Feature',
+          id: uniqueId,
+          geometry: buffered.geometry as Polygon,
+          properties: {
             type: 'wall',
             width: wallWidth,
             height: WALL_HEIGHT,
-            },
+          },
         };
 
         setWallFeatures((prev) => ({
-            ...prev,
-            features: [...prev.features, wallFeature],
+          ...prev,
+          features: [...prev.features, wallFeature],
         }));
 
-        // Add wall to supabase 'features' table
         const { data, error } = await supabase
-            .from('features')
-            .insert([
-                {
-                    id: uniqueId,
-                    geometry: wallFeature.geometry,
-                    // floor: currentFloor,
-                    type: 'wall',
-                },
-            ])
-            .select();
+          .from('features')
+          .insert([
+            {
+              id: uniqueId,
+              geometry: wallFeature.geometry,
+              type: 'wall',
+            },
+          ])
+          .select();
 
         setTimeout(() => {
-            draw.current?.changeMode('draw_line_string');
+          draw.current?.changeMode('draw_line_string');
         }, 0);
-
-        } catch (err) {
+      } catch (err) {
         console.error('Turf buffering error:', err);
-        }
+      }
     } else if (mode === 'simple_select' || (mode === 'simple_select' && newFeature.geometry.type === 'Polygon')) {
-        if (newFeature.geometry.type !== 'Polygon') {
+      if (newFeature.geometry.type !== 'Polygon') {
         return;
-        }
-        const roomFeature: RoomFeature = {
+      }
+      const roomFeature: RoomFeature = {
         type: 'Feature',
         id: uniqueId,
         geometry: newFeature.geometry as Polygon,
         properties: {
-            id: uniqueId,
-            type: 'room',
-            name: `Room ${roomFeatures.features.length + 1}`,
-            number: "",
-            color: '#ff0000',
-            bookable: true,
-            capacity: 10,
-            avEquipment: [],
-            purpose: 'Meeting',
-            icon: '🏢',
+          id: uniqueId,
+          type: 'room',
+          name: `Room ${roomFeatures.features.length + 1}`,
+          number: '',
+          color: '#ff0000',
+          bookable: true,
+          capacity: 10,
+          avEquipment: [],
+          purpose: 'Meeting',
+          icon: '🏢',
         },
-        };
-        setRoomFeatures((prev) => ({
+      };
+      setRoomFeatures((prev) => ({
         ...prev,
         features: [...prev.features, roomFeature],
-        }));
-        
-        // Add room to supabase 'rooms' table
-        const { data, error } = await supabase
-            .from('rooms')
-            .insert([
-                {
-                    id: uniqueId,
-                    room_number: roomFeatures.features.length + 1, // TODO: let user set the room number
-                    title: roomFeature.properties.name,
-                    description: roomFeature.properties.purpose,
-                    seats: roomFeature.properties.capacity,
-                    // type: roomFeature.properties.room_type,
-                    // equipment: roomFeature.properties.equipment,
-                    bookable: roomFeature.properties.bookable,
-                    geometry: roomFeature.geometry
-                },
-            ])
-            .select();
+      }));
 
-        // console.log('Inserted room into Supabase:', data, error);
+      const { data, error } = await supabase
+        .from('rooms')
+        .insert([
+          {
+            id: uniqueId,
+            room_number: roomFeatures.features.length + 1,
+            title: roomFeature.properties.name,
+            description: roomFeature.properties.purpose,
+            seats: roomFeature.properties.capacity,
+            bookable: roomFeature.properties.bookable,
+            geometry: roomFeature.geometry,
+          },
+        ])
+        .select();
 
-        setSelectedFeatureId(uniqueId);
-        setTimeout(() => {
-            draw.current?.changeMode('draw_polygon');
-        }, 0);
-
+      setSelectedFeatureId(uniqueId);
+      setTimeout(() => {
+        draw.current?.changeMode('draw_polygon');
+      }, 0);
     }
-    }, [mode, wallWidth, roomFeatures]);
+  }, [mode, wallWidth, roomFeatures]);
 
   const setRoomMarkers = useCallback((map: mapboxgl.Map, room: RoomFeature | null) => {
-    // Remove previous markers
     markersRef.current.forEach((marker) => marker.remove());
     markersRef.current = [];
 
-    // Remove any preview polygon layer if it exists
     if (map.getSource('room-preview')) {
       map.removeLayer('room-preview');
       map.removeSource('room-preview');
@@ -433,14 +420,10 @@ const Editor: React.FC = () => {
       return null;
     }
 
-    // For each corner of the outer ring (first ring in coordinates), skip the last point (duplicate of first)
     const corners = room.geometry.coordinates[0];
     const markers: mapboxgl.Marker[] = [];
-
-    // Keep a copy of the current coordinates for preview
     let previewCoordinates = [...corners];
 
-    // Only create markers for unique corners (skip last if duplicate of first)
     const numCorners = corners.length > 1 && corners[0][0] === corners[corners.length - 1][0] && corners[0][1] === corners[corners.length - 1][1]
       ? corners.length - 1
       : corners.length;
@@ -458,18 +441,15 @@ const Editor: React.FC = () => {
       el.style.boxShadow = '0 0 4px rgba(0,0,0,0.5)';
       el.title = `${room.properties.name} - Corner ${idx + 1}`;
 
-      // Make the marker draggable
       const marker = new mapboxgl.Marker({ element: el, draggable: true })
         .setLngLat([lng, lat])
         .addTo(map);
 
-      // Show preview polygon while dragging
       marker.on('drag', () => {
         const lngLat = marker.getLngLat();
         previewCoordinates = corners.map((coord, coordIdx) =>
           coordIdx === idx ? [lngLat.lng, lngLat.lat] : coord
         );
-        // Ensure the polygon is closed
         if (
           previewCoordinates.length > 2 &&
           (previewCoordinates[0][0] !== previewCoordinates[previewCoordinates.length - 1][0] ||
@@ -491,7 +471,6 @@ const Editor: React.FC = () => {
           ],
         };
 
-        // Remove previous preview
         if (map.getSource('room-preview')) {
           (map.getSource('room-preview') as mapboxgl.GeoJSONSource).setData(previewGeoJSON as FeatureCollection);
         } else {
@@ -513,7 +492,6 @@ const Editor: React.FC = () => {
 
       marker.on('dragend', async () => {
         const lngLat = marker.getLngLat();
-        // Update only this corner in the geometry
         const newCoordinates = room.geometry.coordinates.map((ring, ringIdx) =>
           ringIdx === 0
             ? ring.map((coord, coordIdx) =>
@@ -521,7 +499,6 @@ const Editor: React.FC = () => {
               )
             : ring
         );
-        // Ensure the polygon is closed
         if (
           newCoordinates[0].length > 2 &&
           (newCoordinates[0][0][0] !== newCoordinates[0][newCoordinates[0].length - 1][0] ||
@@ -539,7 +516,6 @@ const Editor: React.FC = () => {
             f.id === room.id ? { ...f, geometry: newGeometry } : f
           ),
         }));
-        // Update geometry in Supabase
         const { error } = await supabase
           .from('rooms')
           .update({ geometry: { type: 'Polygon', coordinates: newCoordinates } })
@@ -547,11 +523,6 @@ const Editor: React.FC = () => {
         if (error) {
           console.log('Error updating room geometry:', error);
         }
-        // Remove preview polygon after drag ends
-        // if (map.getSource('room-preview')) {
-        //   map.removeLayer('room-preview');
-        //   map.removeSource('room-preview');
-        // }
       });
 
       markers.push(marker);
@@ -567,23 +538,37 @@ const Editor: React.FC = () => {
     e.originalEvent.stopPropagation();
 
     const bbox: [mapboxgl.PointLike, mapboxgl.PointLike] = [
-      [e.point.x - 20, e.point.y - 20],
-      [e.point.x + 20, e.point.y + 20],
+      [e.point.x - 50, e.point.y - 50], // Increased bbox for better click detection
+      [e.point.x + 50, e.point.y + 50],
     ];
 
     const featuresAtPoint = map.current.queryRenderedFeatures(bbox, {
       layers: ['rooms', 'furniture', 'walls'],
     });
 
+    console.log('Features at point:', featuresAtPoint);
+
     if (mode === 'simple_select') {
-      // Prioritize furniture, then room, then wall
       const furnitureFeature = featuresAtPoint.find(
         (f) => f.properties?.type === 'furniture'
       ) as FurnitureFeature | undefined;
       if (furnitureFeature) {
-        setSelectedFurniture(furnitureFeature);
-        setSelectedFeatureId(null);
-        return;
+        console.log('Found furniture feature:', furnitureFeature);
+        if (furnitureFeature.id) {
+          const matchedFeature = furnitureFeatures.features.find(
+            (f) => f.id === furnitureFeature.id
+          ) as FurnitureFeature | undefined;
+          if (matchedFeature) {
+            setSelectedFurniture(matchedFeature);
+            setSelectedFeatureId(null);
+            console.log('Selected furniture feature:', matchedFeature);
+            return;
+          } else {
+            console.warn('No matching furniture feature found in state for ID:', furnitureFeature.id);
+          }
+        } else {
+          console.warn('Furniture feature missing ID:', furnitureFeature);
+        }
       }
 
       const roomFeature = featuresAtPoint.find(
@@ -605,19 +590,17 @@ const Editor: React.FC = () => {
         return;
       }
 
-      // If nothing found, clear selection
       setSelectedFeatureId(null);
       setSelectedFurniture(null);
     }
-  }, [mode, setRoomMarkers]);
+  }, [mode, setRoomMarkers, furnitureFeatures]);
+
   useEffect(() => {
     if (!map.current) return;
 
-    // When a room is selected, show its markers.
     if (selectedFeature && selectedFeature.properties?.type === 'room') {
       setRoomMarkers(map.current, selectedFeature as RoomFeature);
     } else {
-      // When room is deselected, remove any room markers and preview polygon.
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current = [];
 
@@ -656,8 +639,6 @@ const Editor: React.FC = () => {
         }));
       };
 
-      
-
       const onMouseUp = () => {
         map.current?.off('mousemove', onMouseMove);
         map.current?.off('mouseup', onMouseUp);
@@ -673,14 +654,16 @@ const Editor: React.FC = () => {
     angle: number,
     pivot: [number, number]
   ): Feature<Polygon> => {
-    // Turf expects the pivot as [lng, lat]
     return transformRotate(feature, angle, { pivot });
   };
 
   const updateFurnitureTransform = useCallback(
     debounce(async (transform: { rotation?: number; scaleX?: number; scaleY?: number }) => {
       console.log('called updateFurnitureTransform with:', transform);
-      if (!selectedFurniture || !map.current) return;
+      if (!selectedFurniture || !map.current || !selectedFurniture.id) {
+        console.log('No selected furniture, map not initialized, or missing id', selectedFurniture, 'Map:', map.current);
+        return;
+      }
 
       setFurnitureFeatures((prev) => {
         let updatedFeature: FurnitureFeature | undefined;
@@ -689,26 +672,26 @@ const Editor: React.FC = () => {
             let newGeom = f.geometry as Polygon;
             const newProps = { ...f.properties };
 
-            // --- Store original geometry if not present ---
             if (!f.properties?.originalGeometry) {
               newProps.originalGeometry = JSON.parse(JSON.stringify(f.geometry));
             }
 
-            // --- Handle rotation ---
             if (typeof transform.rotation === 'number' && !isNaN(transform.rotation)) {
+              console.log('Rotating furniture feature:', f.id, 'by', transform.rotation, 'degrees');
               const centroid = turf.centroid(f).geometry.coordinates as [number, number];
-              // Always rotate from the original geometry
+              console.log('Centroid for rotation:', centroid);
               const baseGeom = f.properties?.originalGeometry || f.geometry;
+              console.log('Base geometry for rotation:', baseGeom);
               newGeom = rotateFeature(
                 { ...f, geometry: baseGeom },
                 transform.rotation,
                 centroid
               ).geometry as Polygon;
+              console.log('New geometry after rotation:', newGeom);
               newProps.rotation = transform.rotation;
               console.log('Rotated furniture feature:', f.id, 'to', transform.rotation, 'degrees');
             }
 
-            // --- Handle scaling ---
             let scaleX = typeof transform.scaleX === 'number' && !isNaN(transform.scaleX) && transform.scaleX > 0
               ? transform.scaleX
               : f.properties?.scaleX ?? 1;
@@ -723,7 +706,6 @@ const Editor: React.FC = () => {
               newProps.scaleX = scaleX;
               newProps.scaleY = scaleY;
               const centroid = turf.centroid(f).geometry.coordinates;
-              // Scale X
               if (scaleX !== f.properties?.scaleX) {
                 newGeom = turf.transformScale(
                   newGeom,
@@ -731,7 +713,6 @@ const Editor: React.FC = () => {
                   { origin: centroid }
                 ) as Polygon;
               }
-              // Scale Y
               if (scaleY !== f.properties?.scaleY) {
                 newGeom = turf.transformScale(
                   newGeom,
@@ -751,6 +732,20 @@ const Editor: React.FC = () => {
 
         if (updatedFeature) {
           createFurnitureMarkers(map.current!, updatedFeature, updateFurnitureTransform);
+          // Update Supabase
+          supabase
+            .from('features')
+            .update({
+              geometry: updatedFeature.geometry,
+            })
+            .eq('id', updatedFeature.id)
+            .then(({ error }) => {
+              if (error) {
+                console.error('Error updating furniture in Supabase:', error);
+              } else {
+                console.log('Updated furniture in Supabase:', updatedFeature);
+              }
+            });
         }
 
         return { ...prev, features: newFeatures };
@@ -762,10 +757,9 @@ const Editor: React.FC = () => {
   const updateRoomProperties = useCallback(
     async (properties: Partial<RoomFeature['properties']>) => {
       if (!selectedFeatureId) return;
-      
+
       console.log('Updating room properties:', properties);
 
-      // Update local state
       setRoomFeatures((prev) => ({
         ...prev,
         features: prev.features.map((f) =>
@@ -773,7 +767,6 @@ const Editor: React.FC = () => {
         ),
       }));
 
-      // Update in Supabase
       const updatePayload: any = {};
       if (properties.name !== undefined) updatePayload.title = properties.name;
       if (properties.number !== undefined) updatePayload.room_number = properties.number;
@@ -854,156 +847,185 @@ const Editor: React.FC = () => {
       return;
     }
 
+    const uniqueId = generateUniqueId();
     const furnitureFeature: FurnitureFeature = {
       type: 'Feature',
-      id: generateUniqueId(),
+      id: uniqueId,
       geometry: furniturePolygon?.geometry as Polygon,
       properties: {
         type: 'furniture',
-        scaleX: 1,
-        scaleY: 1,
+        item: jsondata.name,
+        emoji: jsondata.icon,
+        shape,
+        height: sizes.height,
       },
     };
+
+    console.log('Created furniture feature:', furnitureFeature);
 
     setFurnitureFeatures((prev) => ({
       ...prev,
       features: [...prev.features, furnitureFeature],
     }));
 
-    // Add furniture to Supabase 'features' table
     const { data, error } = await supabase
       .from('features')
       .insert([
         {
-          id: furnitureFeature.id,
+          id: uniqueId,
           geometry: furnitureFeature.geometry,
-          // floor: 'joku',
           type: furnitureFeature.properties.type,
+          item: furnitureFeature.properties.item,
+          emoji: furnitureFeature.properties.emoji,
+          shape: furnitureFeature.properties.shape,
+          height: furnitureFeature.properties.height,
         },
       ])
       .select();
 
-      console.log('Inserted furniture into Supabase:', data);
+    console.log('Inserted furniture into Supabase:', data, error);
   }, []);
 
   const handleLayerSelect = useCallback((feature: Feature) => {
     if (!feature.id) {
-        console.warn('Feature does not have an ID:', feature);
-        return;
+      console.warn('Feature does not have an ID:', feature);
+      return;
     }
     if (feature.properties?.type === 'furniture' || feature.properties?.type === 'door') {
-        setSelectedFurniture(feature as FurnitureFeature);
-        setSelectedFeatureId(null);
-        setMode('simple_select');
+      setSelectedFurniture(feature as FurnitureFeature);
+      setSelectedFeatureId(null);
+      setMode('simple_select');
     } else if (feature.properties?.type === 'room') {
-        setSelectedFeatureId(feature.id as string); // <- use ID here
-        setSelectedFurniture(null);
-        setMode('simple_select');
+      setSelectedFeatureId(feature.id as string);
+      setSelectedFurniture(null);
+      setMode('simple_select');
     } else if (feature.properties?.type === 'wall') {
-        setSelectedFeatureId(feature.id as string); // <- use ID here
-        setSelectedFurniture(null);
-        // setMode('simple_select');
-        console.log('Selected wall feature:', feature, feature.properties.type);
+      setSelectedFeatureId(feature.id as string);
+      setSelectedFurniture(null);
+      console.log('Selected wall feature:', feature, feature.properties.type);
     }
   }, []);
 
-    const handleDrawUpdate = useCallback((e: any) => {
-        console.log('draw.update', e);
-        if (!e.features || !e.features[0] || !e.features[0].geometry) {
-            console.warn('Invalid draw.update event:', e);
-            return;
-        }
-        const updatedFeature = e.features[0];
-        setRoomFeatures((prev) => ({
-            ...prev,
-            features: prev.features.map((f) =>
-              f.id === updatedFeature.id
-                ? {
-                    ...f,
-                    geometry: updatedFeature.geometry,
-                    // Merge any new properties from the drawn feature, but keep our custom ones
-                    properties: { ...f.properties, ...updatedFeature.properties },
-                  }
-                : f
-            ),
-        }));
-    }, []);
-
+  const handleDrawUpdate = useCallback((e: any) => {
+    console.log('draw.update', e);
+    if (!e.features || !e.features[0] || !e.features[0].geometry) {
+      console.warn('Invalid draw.update event:', e);
+      return;
+    }
+    const updatedFeature = e.features[0];
+    setRoomFeatures((prev) => ({
+      ...prev,
+      features: prev.features.map((f) =>
+        f.id === updatedFeature.id
+          ? {
+              ...f,
+              geometry: updatedFeature.geometry,
+              properties: { ...f.properties, ...updatedFeature.properties },
+            }
+          : f
+      ),
+    }));
+  }, []);
 
   const toggleLayer = useCallback((layer: string) => {
     setExpandedLayers((prev) => ({ ...prev, [layer]: !prev[layer] }));
   }, []);
 
-  // Initialize Map (run only once)
   useEffect(() => {
-    if (!mapContainer.current) return;
+    const fetchAllData = async () => {
+      try {
+        // Fetch rooms
+        const { data: roomsData, error: roomsError } = await supabase.from('rooms').select('*');
+        if (roomsError) throw roomsError;
+        if (roomsData) {
+          setRoomFeatures({
+            type: 'FeatureCollection',
+            features: roomsData.map((row) => ({
+              type: 'Feature',
+              id: row.id,
+              geometry: row.geometry,
+              properties: {
+                id: row.id,
+                type: 'room',
+                name: row.title,
+                number: row.room_number || '',
+                color: row.color || '#ff0000',
+                bookable: row.bookable,
+                capacity: row.seats,
+                avEquipment: row.avEquipment || [],
+                purpose: row.description,
+                icon: row.icon || '🏢',
+              },
+            })),
+          });
+        }
 
-    const MAPBOX_STYLE = window.matchMedia?.('(prefers-color-scheme: dark)').matches
-      ? 'mapbox://styles/mapbox/dark-v10'
-      : 'mapbox://styles/mapbox/streets-v12';
+        // Fetch walls
+        const { data: wallsData, error: wallsError } = await supabase.from('features').select('*').eq('type', 'wall');
+        if (wallsError) throw wallsError;
+        if (wallsData) {
+          setWallFeatures({
+            type: 'FeatureCollection',
+            features: wallsData.map((row) => ({
+              type: 'Feature',
+              id: row.id,
+              geometry: row.geometry,
+              properties: {
+                type: 'wall',
+                width: row.width || DEFAULT_WALL_WIDTH,
+                height: WALL_HEIGHT,
+              },
+            })),
+          });
+        }
 
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: MAPBOX_STYLE,
-      center: DEFAULT_CENTER,
-      zoom: DEFAULT_ZOOM,
-      bearing: 0,
-      antialias: true,
-      interactive: true,
-    });
+        // Fetch furniture
+        const { data: furnitureData, error: furnitureError } = await supabase.from('features').select('*').eq('type', 'furniture');
+        if (furnitureError) throw furnitureError;
+        if (furnitureData) {
+          const features = furnitureData.map((row) => {
+            if (!row.id) {
+              console.warn('Furniture feature missing ID in Supabase:', row);
+            }
+            return {
+              type: 'Feature',
+              id: row.id,
+              geometry: row.geometry,
+              properties: {
+                type: row.type || 'furniture',
+                item: row.item || '',
+                emoji: row.emoji || '🪑',
+                height: row.height || 1,
+                shape: row.shape || 'cube',
+                scaleX: row.scaleX || 1,
+                scaleY: row.scaleY || 1,
+              },
+            };
+          });
+          setFurnitureFeatures({
+            type: 'FeatureCollection',
+            features,
+          });
+        }
 
-    draw.current = new MapboxDraw({
-      displayControlsDefault: false,
-      controls: { line_string: true, polygon: true, trash: true },
-    });
-
-    map.current.addControl(draw.current);
-
-    map.current.on('load', () => {
-      setMapLoaded(true);
-    });
-
-    return () => {
-      map.current?.remove();
-    };
-  }, []); // Empty dependency array to run only once
-
-  // Attach event listeners
-  useEffect(() => {
-    if (!map.current) return;
-
-    map.current.on('draw.create', handleDrawCreate);
-    map.current.on('draw.update', handleDrawUpdate);
-    map.current.on('click', handleMapClick);
-    map.current.on('mousedown', handleFurnitureMouseDown);
-
-    map.current.on('mousedown', (e) => {
-      if (mode === 'simple_select') {
-        map.current?.dragPan.disable();
+        setDataLoaded(true); // All data fetched
+      } catch (err) {
+        console.error('Error fetching map data:', err);
       }
-    });
-    map.current.on('mouseup', () => {
-      map.current?.dragPan.enable();
-    });
-
-    return () => {
-      map.current?.off('draw.create', handleDrawCreate);
-        map.current?.off('draw.update', handleDrawUpdate);
-      map.current?.off('click', handleMapClick);
-      map.current?.off('mousedown', handleFurnitureMouseDown);
-      map.current?.off('mouseup', () => map.current?.dragPan.enable());
     };
-  }, [handleDrawCreate, handleDrawUpdate, handleMapClick, handleFurnitureMouseDown, mode]);
 
-  // Initialize map layers
+    fetchAllData();
+  }, []);
+
   const initializeMapLayers = useCallback(() => {
     if (!map.current) return;
 
-    const safeAddSource = (id: string, data: GeoJSON.FeatureCollection) => {
+    const safeAddSource = (id: string, data: GeoJSON.FeatureCollection, promoteId?: string) => {
       if (!map.current!.getSource(id)) {
         map.current!.addSource(id, {
           type: 'geojson',
           data,
+          promoteId,
         });
       }
     };
@@ -1014,8 +1036,9 @@ const Editor: React.FC = () => {
       }
     };
 
-    // Walls
-    safeAddSource('walls', wallFeatures);
+    console.log('furnitureFeatures before adding source:', JSON.stringify(furnitureFeatures, null, 2));
+
+    safeAddSource('walls', wallFeatures, 'id');
     safeAddLayer('walls', {
       id: 'walls',
       type: 'fill-extrusion',
@@ -1029,8 +1052,7 @@ const Editor: React.FC = () => {
       },
     });
 
-    // Rooms
-    safeAddSource('rooms', roomFeatures);
+    safeAddSource('rooms', roomFeatures, 'id');
     safeAddLayer('rooms', {
       id: 'rooms',
       type: 'fill',
@@ -1058,8 +1080,7 @@ const Editor: React.FC = () => {
       },
     });
 
-    // Furniture
-    safeAddSource('furniture', furnitureFeatures);
+    safeAddSource('furniture', furnitureFeatures, 'id');
     safeAddLayer('furniture', {
       id: 'furniture',
       type: 'fill-extrusion',
@@ -1100,8 +1121,72 @@ const Editor: React.FC = () => {
     });
   }, [wallFeatures, roomFeatures, furnitureFeatures, selectedFurniture]);
 
+  // Only initialize map layers after both map and data are loaded
+  useEffect(() => {
+    if (mapLoaded && dataLoaded) {
+      initializeMapLayers();
+    }
+  }, [mapLoaded, dataLoaded, initializeMapLayers]);
 
-  // Handle furniture resize and rotate markers
+  useEffect(() => {
+    if (!mapContainer.current) return;
+
+    const MAPBOX_STYLE = window.matchMedia?.('(prefers-color-scheme: dark)').matches
+      ? 'mapbox://styles/mapbox/dark-v10'
+      : 'mapbox://styles/mapbox/streets-v12';
+
+    map.current = new mapboxgl.Map({
+      container: mapContainer.current,
+      style: MAPBOX_STYLE,
+      center: DEFAULT_CENTER,
+      zoom: DEFAULT_ZOOM,
+      bearing: 0,
+      antialias: true,
+      interactive: true,
+    });
+
+    draw.current = new MapboxDraw({
+      displayControlsDefault: false,
+      controls: { line_string: true, polygon: true, trash: true },
+    });
+
+    map.current.addControl(draw.current);
+
+    map.current.on('load', () => {
+      setMapLoaded(true); // Only set mapLoaded here
+    });
+
+    return () => {
+      map.current?.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!map.current) return;
+
+    map.current.on('draw.create', handleDrawCreate);
+    map.current.on('draw.update', handleDrawUpdate);
+    map.current.on('click', handleMapClick);
+    map.current.on('mousedown', handleFurnitureMouseDown);
+
+    map.current.on('mousedown', (e) => {
+      if (mode === 'simple_select') {
+        map.current?.dragPan.disable();
+      }
+    });
+    map.current.on('mouseup', () => {
+      map.current?.dragPan.enable();
+    });
+
+    return () => {
+      map.current?.off('draw.create', handleDrawCreate);
+      map.current?.off('draw.update', handleDrawUpdate);
+      map.current?.off('click', handleMapClick);
+      map.current?.off('mousedown', handleFurnitureMouseDown);
+      map.current?.off('mouseup', () => map.current?.dragPan.enable());
+    };
+  }, [handleDrawCreate, handleDrawUpdate, handleMapClick, handleFurnitureMouseDown, mode]);
+
   useEffect(() => {
     if (!map.current || !selectedFurniture || mode !== 'simple_select') {
       markersRef.current.forEach((marker) => marker.remove());
@@ -1117,39 +1202,36 @@ const Editor: React.FC = () => {
     };
   }, [selectedFurniture, mode, updateFurnitureTransform, createFurnitureMarkers]);
 
-    // Update sources
-    useEffect(() => {
+  useEffect(() => {
     if (map.current && map.current.getSource('walls') && map.current.isStyleLoaded()) {
-        // Validate wallFeatures
-        if (wallFeatures.type === 'FeatureCollection' && Array.isArray(wallFeatures.features)) {
+      if (wallFeatures.type === 'FeatureCollection' && Array.isArray(wallFeatures.features)) {
         (map.current.getSource('walls') as mapboxgl.GeoJSONSource).setData(wallFeatures);
-        } else {
+      } else {
         console.warn('Invalid wallFeatures data:', wallFeatures);
-        }
+      }
     }
-    }, [wallFeatures]);
+  }, [wallFeatures]);
 
-    useEffect(() => {
+  useEffect(() => {
     if (map.current && map.current.getSource('rooms') && map.current.isStyleLoaded()) {
-        if (roomFeatures.type === 'FeatureCollection' && Array.isArray(roomFeatures.features)) {
+      if (roomFeatures.type === 'FeatureCollection' && Array.isArray(roomFeatures.features)) {
         (map.current.getSource('rooms') as mapboxgl.GeoJSONSource).setData(roomFeatures);
-        } else {
+      } else {
         console.warn('Invalid roomFeatures data:', roomFeatures);
-        }
+      }
     }
-    }, [roomFeatures]);
+  }, [roomFeatures]);
 
-    useEffect(() => {
+  useEffect(() => {
     if (map.current && map.current.getSource('furniture') && map.current.isStyleLoaded()) {
-        if (furnitureFeatures.type === 'FeatureCollection' && Array.isArray(furnitureFeatures.features)) {
+      if (furnitureFeatures.type === 'FeatureCollection' && Array.isArray(furnitureFeatures.features)) {
         (map.current.getSource('furniture') as mapboxgl.GeoJSONSource).setData(furnitureFeatures);
-        } else {
+      } else {
         console.warn('Invalid furnitureFeatures data:', furnitureFeatures);
-        }
+      }
     }
-    }, [furnitureFeatures]);
+  }, [furnitureFeatures]);
 
-  // Handle drag and drop
   useEffect(() => {
     const container = mapContainer.current;
     if (!container) return;
@@ -1163,102 +1245,6 @@ const Editor: React.FC = () => {
     };
   }, [handleDrop]);
 
-  // Fetch rooms from Supabase on mount
-  useEffect(() => {
-    const fetchRooms = async () => {
-      const { data, error } = await supabase.from('rooms').select('*');
-      if (error) {
-        console.error('Error fetching rooms:', error);
-        return;
-      }
-      if (data) {
-        setRoomFeatures({
-          type: 'FeatureCollection',
-          features: data.map((row) => ({
-            type: 'Feature',
-            id: row.id,
-            geometry: row.geometry,
-            properties: {
-              id: row.id,
-              type: 'room',
-              name: row.title,
-              number: row.room_number || '',
-              color: row.color || '#ff0000',
-              bookable: row.bookable,
-              capacity: row.seats,
-              avEquipment: row.avEquipment || [],
-              purpose: row.description,
-              icon: row.icon || '🏢',
-            },
-          })),
-        });
-      }
-      console.log('Fetched rooms from Supabase:', data);
-    };
-    const fetchWalls = async () => {
-      const { data, error } = await supabase.from('features').select('*').eq('type', 'wall');
-      if (error) {
-        console.error('Error fetching walls:', error);
-        return;
-      }
-      if (data) {
-        setWallFeatures({
-          type: 'FeatureCollection',
-          features: data.map((row) => ({
-            type: 'Feature',
-            id: row.id,
-            geometry: row.geometry,
-            properties: {
-              type: 'wall',
-              width: row.width || DEFAULT_WALL_WIDTH,
-              height: WALL_HEIGHT,
-            },
-          })),
-        });
-      }
-    };
-
-    const fetchFurniture = async () => {
-      const { data, error } = await supabase.from('features').select('*').eq('type', 'furniture');
-      if (error) {
-        console.error('Error fetching furniture:', error);
-        return;
-      }
-      if (data) {
-        setFurnitureFeatures({
-          type: 'FeatureCollection',
-          features: data.map((row) => ({
-            type: 'Feature',
-            id: row.id,
-            geometry: row.geometry,
-            properties: {
-              type: row.type || 'furniture',
-              item: row.item || '',
-              emoji: row.emoji || '🪑',
-              height: row.height || 1,
-              shape: row.shape || 'cube',
-              scaleX: row.scaleX || 1,
-              scaleY: row.scaleY || 1,
-            },
-          })),
-        });
-      }
-      console.log('Fetched furniture from Supabase:', data);
-    };
-    fetchFurniture();
-    fetchRooms();
-    fetchWalls();
-    
-  }, [mapLoaded],);
-
-  useEffect(() => {
-    if (mapLoaded) {
-      initializeMapLayers();
-    }
-  }, [mapLoaded, wallFeatures, roomFeatures, furnitureFeatures]);
-
-
-  // Render
   return (
     <ErrorBoundary>
       <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-700">
@@ -1356,23 +1342,23 @@ const Editor: React.FC = () => {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
                   <input
-                  type="text"
-                  value={selectedFeature.properties.name || ''}
-                  onChange={(e) => {updateRoomProperties({ name: e.target.value });}}
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    type="text"
+                    value={selectedFeature.properties.name || ''}
+                    onChange={(e) => updateRoomProperties({ name: e.target.value })}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1 ">Room number</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Room number</label>
                   <input
-                    type="number"
+                    type="text"
                     value={selectedFeature.properties.number || ''}
                     onChange={(e) => {
-                    const allowed = /^[0-9\/]*$/;
-                    if (allowed.test(e.target.value)) {
-                      updateRoomProperties({ number: e.target.value });
-                    }
-                  }}
+                      const allowed = /^[0-9\/]*$/;
+                      if (allowed.test(e.target.value)) {
+                        updateRoomProperties({ number: e.target.value });
+                      }
+                    }}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                 </div>
@@ -1386,7 +1372,7 @@ const Editor: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700"> 
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
                     <input
                       type="checkbox"
                       checked={selectedFeature.properties.bookable || false}
@@ -1403,7 +1389,7 @@ const Editor: React.FC = () => {
                     value={selectedFeature.properties.capacity || 0}
                     onChange={(e) => updateRoomProperties({ capacity: Number(e.target.value) })}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-                  /> s
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Purpose</label>
@@ -1414,7 +1400,6 @@ const Editor: React.FC = () => {
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-                {/* Icon */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Icon</label>
                   <input
@@ -1424,32 +1409,33 @@ const Editor: React.FC = () => {
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-                {/* Geometry */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Geometry</label>
                   <textarea
                     value={JSON.stringify(selectedFeature.geometry, null, 2)}
-                    // readOnly
                     onChange={async (e) => {
-                      const newGeometry = JSON.parse(e.target.value);
-                      setRoomFeatures((prev) => ({
-                        ...prev,
-                        features: prev.features.map((f) =>
-                          f.id === selectedFeatureId ? { ...f, geometry: newGeometry } : f
-                        ),
-                      }));
-                      const { error } = await supabase
-                        .from('rooms')
-                        .update({ geometry: newGeometry })
-                        .eq('id', selectedFeatureId);
-                      if (error) {
-                        console.error('Error updating room geometry:', error);
+                      try {
+                        const newGeometry = JSON.parse(e.target.value);
+                        setRoomFeatures((prev) => ({
+                          ...prev,
+                          features: prev.features.map((f) =>
+                            f.id === selectedFeatureId ? { ...f, geometry: newGeometry } : f
+                          ),
+                        }));
+                        const { error } = await supabase
+                          .from('rooms')
+                          .update({ geometry: newGeometry })
+                          .eq('id', selectedFeatureId);
+                        if (error) {
+                          console.error('Error updating room geometry:', error);
+                        }
+                      } catch (err) {
+                        console.error('Invalid JSON for geometry:', err);
                       }
                     }}
                     className="w-full h-32 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-                {/* Delete */}
                 <button
                   onClick={async () => {
                     setRoomFeatures((prev) => ({
@@ -1458,23 +1444,22 @@ const Editor: React.FC = () => {
                     }));
                     setSelectedFeatureId(null);
                     const { error } = await supabase
-                        .from('rooms')
-                        .delete()
-                        .eq('id', selectedFeatureId);
+                      .from('rooms')
+                      .delete()
+                      .eq('id', selectedFeatureId);
                     if (error) {
                       console.error('Error deleting room:', error);
                     }
                   }}
-                  className="mt-5 mb-8 w-full bg-red-600 text-white p-2 rounded-md hover:bg-red-700 transition font-medium">
-                    Delete Room
+                  className="mt-5 mb-8 w-full bg-red-600 text-white p-2 rounded-md hover:bg-red-700 transition font-medium"
+                >
+                  Delete Room
                 </button>
               </div>
             )}
             {selectedFurniture && mode === 'simple_select' && (
               <div className="space-y-4">
-                <h3 className="text-md font-semibold text-gray-800">
-                  Properties
-                </h3>
+                <h3 className="text-md font-semibold text-gray-800">Properties</h3>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Rotation (degrees)</label>
                   <input
@@ -1486,55 +1471,54 @@ const Editor: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Scale X</label>
-                  <input
-                    type="number"
-                    value={selectedFurniture.properties.scaleX || 1}
-                    step="0.1"
-                    min="0.1"
-                    onChange={(e) => updateFurnitureTransform({ scaleX: Number(e.target.value) })}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Scale Y</label>
-                  <input
-                    type="number"
-                    value={selectedFurniture.properties.scaleY || 1}
-                    step="0.1"
-                    min="0.1"
-                    onChange={(e) => updateFurnitureTransform({ scaleY: Number(e.target.value) })}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                {/* Geometry */}
-                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Geometry</label>
                   <textarea
                     value={JSON.stringify(selectedFurniture?.geometry, null, 2)}
-                    // readOnly
                     onChange={async (e) => {
-                      const newGeometry = JSON.parse(e.target.value);
-                      setRoomFeatures((prev) => ({
-                        ...prev,
-                        features: prev.features.map((f) =>
-                          f.id === selectedFurniture.id ? { ...f, geometry: newGeometry } : f
-                        ),
-                      }));
-                      const { error } = await supabase
-                        .from('feautres')
-                        .update({ geometry: newGeometry })
-                        .eq('id', selectedFurniture.id);
-                      if (error) {
-                        console.error('Error updating room geometry:', error);
+                      try {
+                        const newGeometry = JSON.parse(e.target.value);
+                        setFurnitureFeatures((prev) => ({
+                          ...prev,
+                          features: prev.features.map((f) =>
+                            f.id === selectedFurniture.id ? { ...f, geometry: newGeometry } : f
+                          ),
+                        }));
+                        const { error } = await supabase
+                          .from('features')
+                          .update({ geometry: newGeometry })
+                          .eq('id', selectedFurniture.id);
+                        if (error) {
+                          console.error('Error updating furniture geometry:', error);
+                        }
+                      } catch (err) {
+                        console.error('Invalid JSON for geometry:', err);
                       }
                     }}
                     className="w-full h-32 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+                <button
+                  onClick={async () => {
+                    setFurnitureFeatures((prev) => ({
+                      ...prev,
+                      features: prev.features.filter((f) => f.id !== selectedFurniture.id),
+                    }));
+                    setSelectedFurniture(null);
+                    const { error } = await supabase
+                      .from('features')
+                      .delete()
+                      .eq('id', selectedFurniture.id);
+                    if (error) {
+                      console.error('Error deleting furniture:', error);
+                    }
+                  }}
+                  className="mt-5 mb-8 w-full bg-red-600 text-white p-2 rounded-md hover:bg-red-700 transition font-medium"
+                >
+                  Delete Furniture
+                </button>
               </div>
             )}
-            {selectedFeature && selectedFeature.properties?.type == 'wall' && (
+            {selectedFeature && selectedFeature.properties?.type === 'wall' && (
               <button
                 onClick={async () => {
                   setWallFeatures((prev) => ({
@@ -1543,15 +1527,16 @@ const Editor: React.FC = () => {
                   }));
                   setSelectedFeatureId(null);
                   const { error } = await supabase
-                      .from('features')
-                      .delete()
-                      .eq('id', selectedFeatureId);
+                    .from('features')
+                    .delete()
+                    .eq('id', selectedFeatureId);
                   if (error) {
                     console.error('Error deleting wall:', error);
                   }
                 }}
-                className="mt-5 mb-8 w-full bg-red-600 text-white p-2 rounded-md hover:bg-red-700 transition font-medium">
-                  Delete Wall
+                className="mt-5 mb-8 w-full bg-red-600 text-white p-2 rounded-md hover:bg-red-700 transition font-medium"
+              >
+                Delete Wall
               </button>
             )}
             {!selectedFeature && !selectedFurniture && (
