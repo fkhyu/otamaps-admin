@@ -15,7 +15,7 @@ const supabase = createClientComponentClient();
 // Constants 
 const DEFAULT_CENTER: [number, number] = [24.8182, 60.1842];
 const DEFAULT_ZOOM = 17;
-const WALL_HEIGHT = 10;
+const WALL_HEIGHT = 5;
 const DEFAULT_WALL_WIDTH = 0.3;
 
 // Furniture Dimensions (in meters, scaled for map)
@@ -44,6 +44,7 @@ interface FurnitureFeature extends Feature<Polygon> {
     height?: number;
     shape?: 'cube' | 'cylinder';
     rotation?: number;
+    label?: string;
     scaleX?: number;
     scaleY?: number;
     originalGeometry?: Polygon;
@@ -538,7 +539,7 @@ const Editor: React.FC = () => {
     e.originalEvent.stopPropagation();
 
     const bbox: [mapboxgl.PointLike, mapboxgl.PointLike] = [
-      [e.point.x - 50, e.point.y - 50], // Increased bbox for better click detection
+      [e.point.x - 50, e.point.y - 50],
       [e.point.x + 50, e.point.y + 50],
     ];
 
@@ -656,6 +657,44 @@ const Editor: React.FC = () => {
   ): Feature<Polygon> => {
     return transformRotate(feature, angle, { pivot });
   };
+  
+  const updateFurnitureProperties = useCallback(
+    async (properties: Partial<FurnitureFeature['properties']>) => {
+      if (!selectedFurniture || !selectedFurniture.id) return;
+
+      console.log('Updating furniture properties:', properties);
+
+      setFurnitureFeatures((prev) => ({
+        ...prev,
+        features: prev.features.map((f) =>
+          f.id === selectedFurniture.id ? { ...f, properties: { ...f.properties, ...properties } } : f
+        ),
+      }));
+      // Fix: update selectedFurniture state as well
+      setSelectedFurniture((prev) =>
+        prev && prev.id === selectedFurniture.id
+          ? { ...prev, properties: { ...prev.properties, ...properties } }
+          : prev
+      );
+
+      const updatePayload: any = {};
+      if (properties.label !== undefined) updatePayload.label = properties.label;
+
+      if (Object.keys(updatePayload).length > 0) {
+        console.log('Updating furniture in Supabase:', updatePayload);
+        const { data, error } = await supabase
+          .from('features')
+          .update(updatePayload)
+          .eq('id', selectedFurniture.id)
+          .select();
+        console.log('Updated furniture in Supabase:', data, error);
+        if (error) {
+          console.error('Error updating furniture in Supabase:', error);
+        }
+      }
+    },
+    [selectedFurniture]
+  );
 
   const updateFurnitureTransform = useCallback(
     debounce(async (transform: { rotation?: number; scaleX?: number; scaleY?: number }) => {
@@ -874,11 +913,10 @@ const Editor: React.FC = () => {
         {
           id: uniqueId,
           geometry: furnitureFeature.geometry,
-          type: furnitureFeature.properties.type,
-          item: furnitureFeature.properties.item,
-          emoji: furnitureFeature.properties.emoji,
-          shape: furnitureFeature.properties.shape,
-          height: furnitureFeature.properties.height,
+          // floor: jsondata.floor || 0, // TODO: Add floor support
+          type: 'furniture',
+          name: jsondata.name,
+          icon: jsondata.icon,
         },
       ])
       .select();
@@ -987,18 +1025,20 @@ const Editor: React.FC = () => {
             if (!row.id) {
               console.warn('Furniture feature missing ID in Supabase:', row);
             }
+            // Get size defaults if missing
+            const furnitureKey = (typeof row.name === 'string' ? row.name.toLowerCase() : '') as keyof typeof FURNITURE_SIZES;
+            const sizeDefaults = FURNITURE_SIZES[furnitureKey] || { height: 1 };
+            const height = row.height ?? sizeDefaults.height ?? 1;
             return {
-              type: 'Feature',
+              type: "Feature" as const,
               id: row.id,
               geometry: row.geometry,
               properties: {
                 type: row.type || 'furniture',
-                item: row.item || '',
-                emoji: row.emoji || '🪑',
-                height: row.height || 1,
-                shape: row.shape || 'cube',
-                scaleX: row.scaleX || 1,
-                scaleY: row.scaleY || 1,
+                item: row.name || 'Unknown Furniture',
+                emoji: row.icon || '❓',
+                height: height,
+                label: row.label || '',
               },
             };
           });
@@ -1169,11 +1209,6 @@ const Editor: React.FC = () => {
     map.current.on('click', handleMapClick);
     map.current.on('mousedown', handleFurnitureMouseDown);
 
-    map.current.on('mousedown', (e) => {
-      if (mode === 'simple_select') {
-        map.current?.dragPan.disable();
-      }
-    });
     map.current.on('mouseup', () => {
       map.current?.dragPan.enable();
     });
@@ -1322,7 +1357,7 @@ const Editor: React.FC = () => {
                       onClick={() => handleLayerSelect(feature)}
                     >
                       {feature.properties?.emoji} {feature.properties?.item}{' '}
-                      {furnitureFeatures.features.indexOf(feature) + 1}
+                      {feature.properties?.label ? `(${feature.properties.label})` : furnitureFeatures.features.indexOf(feature) + 1}
                     </div>
                   ))}
                 </div>
@@ -1459,7 +1494,15 @@ const Editor: React.FC = () => {
             )}
             {selectedFurniture && mode === 'simple_select' && (
               <div className="space-y-4">
-                <h3 className="text-md font-semibold text-gray-800">Properties</h3>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Label</label>
+                  <input
+                    type="text"
+                    value={selectedFurniture.properties.label || ''}
+                    onChange={(e) => updateFurnitureProperties({ label: e.target.value })}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Rotation (degrees)</label>
                   <input
