@@ -170,7 +170,7 @@ const Editor: React.FC = () => {
       sliderEl.style.top = `-${sliderRadiusPx - 9}px`;
       sliderEl.style.width = `${sliderRadiusPx * 2}px`;
       sliderEl.style.height = `${sliderRadiusPx * 2}px`;
-      sliderEl.style.pointerEvents = 'auto';
+      sliderEl.style.pointerEvents = 'none'; // Prevent slider from blocking marker drag
       sliderEl.style.zIndex = '10';
 
       const moveEl = document.createElement('div');
@@ -190,14 +190,17 @@ const Editor: React.FC = () => {
           <circle id="slider-handle" cx="${sliderRadiusPx}" cy="8" r="8" fill="#fff" stroke="#0074d9" stroke-width="2" style="pointer-events:all;cursor:pointer;" />
         </svg>
       `;
+      // Set pointer-events for handle only
+      const svg = sliderEl.querySelector('svg');
+      const handle = sliderEl.querySelector('#slider-handle') as SVGCircleElement;
+      if (svg) svg.style.pointerEvents = 'none';
+      if (handle) handle.style.pointerEvents = 'all';
 
       sliderEl.addEventListener('mousedown', (e) => e.stopPropagation());
       sliderEl.addEventListener('touchstart', (e) => e.stopPropagation());
       moveEl.style.position = 'relative';
       moveEl.appendChild(sliderEl);
 
-      const svg = sliderEl.querySelector('svg');
-      const handle = sliderEl.querySelector('#slider-handle') as SVGCircleElement;
       if (handle) {
         handle.addEventListener('mousedown', (e) => e.stopPropagation());
         handle.addEventListener('touchstart', (e) => e.stopPropagation());
@@ -279,6 +282,8 @@ const Editor: React.FC = () => {
         const oldCenter = centroid;
         const deltaLng = newCenter.lng - oldCenter[0];
         const deltaLat = newCenter.lat - oldCenter[1];
+
+        console.log('Furniture moved:', furniture.id, 'Delta:', deltaLng, deltaLat);  
 
         const newGeom = {
           ...furniture.geometry,
@@ -539,8 +544,8 @@ const Editor: React.FC = () => {
     e.originalEvent.stopPropagation();
 
     const bbox: [mapboxgl.PointLike, mapboxgl.PointLike] = [
-      [e.point.x - 50, e.point.y - 50],
-      [e.point.x + 50, e.point.y + 50],
+      [e.point.x, e.point.y],
+      [e.point.x, e.point.y],
     ];
 
     const featuresAtPoint = map.current.queryRenderedFeatures(bbox, {
@@ -1076,7 +1081,7 @@ const Editor: React.FC = () => {
       }
     };
 
-    console.log('furnitureFeatures before adding source:', JSON.stringify(furnitureFeatures, null, 2));
+    // console.log('furnitureFeatures before adding source:', JSON.stringify(furnitureFeatures, null, 2));
 
     safeAddSource('walls', wallFeatures, 'id');
     safeAddLayer('walls', {
@@ -1191,6 +1196,7 @@ const Editor: React.FC = () => {
     });
 
     map.current.addControl(draw.current);
+    map.current.addControl(new mapboxgl.ScaleControl());
 
     map.current.on('load', () => {
       setMapLoaded(true); // Only set mapLoaded here
