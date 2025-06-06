@@ -10,6 +10,7 @@
     import { FURNITURE_SIZES, DEFAULT_WALL_WIDTH, WALL_HEIGHT, MAPBOX_STYLE, DEFAULT_CENTER, DEFAULT_ZOOM } from '../lib/constants';
     import { debounce, rotateFeature } from '../lib/utils';
 
+
     const supabase = createClientComponentClient();
 
     export const useEditor = (
@@ -232,7 +233,7 @@
         };
     }, [initializeMapLayers]);
 
-    // Load data from Supabase
+    // Fetch data from Supabase
     useEffect(() => {
         if (!mapLoaded) return;
 
@@ -299,24 +300,27 @@
         } else if (furnitureData) {
             setFurnitureFeatures({
             type: 'FeatureCollection',
-            features: furnitureData.map((item) => ({
-                id: item.id,
-                type: 'Feature',
-                geometry: item.geometry,
-                properties: {
-                type: 'furniture',
-                id: item.id,
-                item: item.item,
-                emoji: item.emoji,
-                height: item.height,
-                shape: item.shape,
-                rotation: item.rotation || 0,
-                label: item.label,
-                scaleX: item.scaleX || 1,
-                scaleY: item.scaleY || 1,
-                originalGeometry: item.originalGeometry,
-                },
-            })),
+            features: furnitureData.map((item) => {
+                const size = FURNITURE_SIZES[item.name.toLowerCase() as keyof typeof FURNITURE_SIZES];
+                return {
+                    id: item.id,
+                    type: 'Feature',
+                    geometry: item.geometry,
+                    properties: {
+                        type: 'furniture',
+                        id: item.id,
+                        item: item.name,
+                        emoji: item.icon,
+                        height: size.height, // Use height from constants
+                        shape: item.shape,
+                        rotation: item.rotation || 0,
+                        label: item.label,
+                        scaleX: item.scaleX || 1,
+                        scaleY: item.scaleY || 1,
+                        originalGeometry: item.originalGeometry,
+                    },
+                };
+            }),
             });
         }
 
@@ -343,6 +347,11 @@
         }
         markersRef.current.forEach((marker) => marker.remove());
         markersRef.current = [];
+
+        if (mapInstance.getSource('furniture-preview')) {
+            mapInstance.removeLayer('furniture-preview');
+            mapInstance.removeSource('furniture-preview');
+        }
 
         if (!furniture.geometry || furniture.geometry.type !== 'Polygon' || !furniture.id) {
             console.warn('Invalid furniture feature for markers:', furniture);
@@ -431,6 +440,42 @@
             event.preventDefault();
             const angle = getAngleFromEvent(event);
             setHandlePosition(angle);
+
+            // --- Preview rotation geometry ---
+            const centroid = turf.centroid(furniture).geometry.coordinates as [number, number];
+            const baseGeom = furniture.properties?.originalGeometry || furniture.geometry;
+            const rotated = rotateFeature(
+            { ...furniture, geometry: baseGeom },
+            angle,
+            centroid
+            );
+            const previewGeoJSON = {
+            type: "FeatureCollection",
+            features: [{
+                type: 'Feature',
+                geometry: rotated.geometry,
+                properties: {},
+            }],
+            };
+            if (mapInstance.getSource('furniture-preview')) {
+            (mapInstance.getSource('furniture-preview') as mapboxgl.GeoJSONSource).setData(previewGeoJSON as FeatureCollection);
+            } else {
+            mapInstance.addSource('furniture-preview', {
+                type: 'geojson', 
+                data: previewGeoJSON as FeatureCollection,
+            });
+            mapInstance.addLayer({
+                id: 'furniture-preview',
+                type: 'fill',
+                source: 'furniture-preview',
+                paint: {
+                'fill-color': '#00bfff',
+                'fill-opacity': 0.3,
+                }
+            });
+            }
+            // --- End preview ---
+
             updateTransform({ rotation: Number(angle) });
         };
 
@@ -463,7 +508,59 @@
             moveEl.removeChild(sliderEl);
         });
 
+
+        moveMarker.on('drag', async (e) => {
+            const newCenter = moveMarker.getLngLat();
+            const oldCenter = centroid;
+            const deltaLng = newCenter.lng - oldCenter[0];
+            const deltaLat = newCenter.lat - oldCenter[1];
+
+            const newGeom = {
+            ...furniture.geometry,
+            coordinates: furniture.geometry.coordinates.map((ring) =>
+                ring.map(([lng, lat]) => [lng + deltaLng, lat + deltaLat])
+            ),
+            };
+
+            console.log(newGeom.coordinates[0])
+
+            const previewGeoJSON = {
+                type: "FeatureCollection",
+                features: [{
+                    type: 'Feature',
+                    geometry: {
+                        type: 'Polygon', 
+                        coordinates: [newGeom.coordinates[0]],
+                    },
+                    properties: {},
+                }],
+            };
+
+            if (mapInstance.getSource('furniture-preview')) {
+                (mapInstance.getSource('furniture-preview') as mapboxgl.GeoJSONSource).setData(previewGeoJSON as FeatureCollection);
+            } else {
+                mapInstance.addSource('furniture-preview', {
+                    type: 'geojson', 
+                    data: previewGeoJSON as FeatureCollection,
+                });
+                mapInstance.addLayer({
+                    id: 'furniture-preview',
+                    type: 'fill',
+                    source: 'furniture-preview',
+                    paint: {
+                        'fill-color': '#00bfff',
+                        'fill-opacity': 0.3,
+                    }
+                });
+            }
+        })
+
         moveMarker.on('dragend', async (e) => {
+            if(mapInstance.getSource('furniture-preview')) {
+                mapInstance.removeLayer('furniture-preview');
+                mapInstance.removeSource('furniture-preview');
+            }
+
             const newCenter = moveMarker.getLngLat();
             const oldCenter = centroid;
             const deltaLng = newCenter.lng - oldCenter[0];
@@ -477,10 +574,19 @@
             };
 
             setFurnitureFeatures((prev) => ({
-            ...prev,
-            features: prev.features.map((f) =>
-                f.id === furniture.id ? { ...f, geometry: newGeom } : f
-            ),
+                ...prev,
+                features: prev.features.map((f) =>
+                    f.id === furniture.id
+                        ? {
+                            ...f,
+                            geometry: newGeom,
+                            properties: {
+                                ...f.properties,
+                                originalGeometry: newGeom,
+                            },
+                        }
+                        : f
+                ),
             }));
 
             const { error } = await supabase
