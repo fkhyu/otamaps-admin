@@ -7,6 +7,7 @@ export interface WallFeature extends Feature<Polygon> {
     type: 'wall';
     width: number;
     height: number;
+    id?: string;
   };
 }
 

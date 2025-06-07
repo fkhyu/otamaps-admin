@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { FeatureCollection, Feature } from 'geojson';
 import { WallFeature, RoomFeature, FurnitureFeature } from '../lib/types';
 
@@ -25,8 +25,29 @@ export const LayerPanel: React.FC<LayerPanelProps> = ({
   toggleLayer,
   handleLayerSelect,
 }) => {
+  const [buttonLabel, setButtonLabel] = useState('Go to SF');
+
   return (
     <div className="w-64 bg-white dark:bg-gray-900 shadow-md p-4 overflow-y-auto">
+      <button 
+        className='bg-[#E78F4A] text-white py-3 w-full rounded-xl mb-10 font-semibold text-2xl'
+        id='goToSF'
+        aria-label="Go to San Francisco"
+        type="button"
+        onClick={() => {
+          const event = new CustomEvent('moveToLocation', { detail: { lng: -122.44, lat: 37.76, zoom: 11.8 } });
+          window.dispatchEvent(event);
+          setButtonLabel("Go to Finland");
+          // if button is again clicked go to Finland
+          if (buttonLabel === "Go to Finland") {
+            const event = new CustomEvent('moveToLocation', { detail: { lng: 24.94, lat: 60.17, zoom: 11.8 } });
+            window.dispatchEvent(event);
+            setButtonLabel("Go to SF");
+          }
+        }}
+      >
+        {buttonLabel}
+      </button>
       <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">Layers</h2>
       <div className="mb-2">
         <div

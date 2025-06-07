@@ -798,8 +798,6 @@
                 id: uniqueId,
                 geometry: wallFeature.geometry,
                 type: 'wall',
-                width: wallWidth,
-                height: WALL_HEIGHT,
                 },
             ])
             .select();
@@ -978,9 +976,7 @@
                     console.log('Selected furniture (fallback):', normalizedFurniture.id)
                     return;
                 }
-                
             }
-        // }
 
         const roomFeature = featuresAtPoint.find(
             (f) => f.properties?.type === 'room'
@@ -1020,9 +1016,33 @@
             (f) => f.properties?.type === 'wall'
         ) as WallFeature | undefined;
         if (wallFeature) {
-            setSelectedFeatureId(wallFeature.id as string);
-            setSelectedFurniture(null);
-            return;
+            const matchedWall = wallFeatures.features.find(
+                (f) => f.id === (wallFeature.id || wallFeature.properties?.id)
+            ) as WallFeature | undefined;
+
+            console.log(matchedWall);
+
+            if (matchedWall) { 
+                setSelectedFeatureId(matchedWall.id as string);
+                setSelectedFurniture(null);
+                setSelectedRoom(null);
+                console.log('selected wall:', matchedWall.id);
+                return;
+            } else {
+                const normalizedWall: WallFeature = {
+                    ...wallFeature,
+                    id: wallFeature.id || wallFeature.properties?.id,
+                    properties: {
+                        ...wallFeature.properties,
+                        id: String(wallFeature.properties?.id ?? wallFeature.id ?? ''),
+                    },
+                };
+                setSelectedFeatureId(normalizedWall.id as string);
+                setSelectedFurniture(null);
+                setSelectedRoom(null);
+                console.log('Selected wall (fallback):', normalizedWall.id, normalizedWall);
+                return;
+            }
         }
 
         setSelectedFeatureId(null);
@@ -1349,6 +1369,27 @@
             },
             [selectedFeatureId, setRoomFeatures]
         );
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        const moveToLocationHandler = (e: Event) => {
+            const customEvent = e as CustomEvent<{ lng: number; lat: number; zoom?: number }>;
+            const { lng, lat, zoom } = customEvent.detail || {};
+            if (map.current && typeof lng === 'number' && typeof lat === 'number') {
+                map.current.flyTo({
+                    center: [lng, lat],
+                    zoom: typeof zoom === 'number' ? zoom : map.current.getZoom(),
+                    essential: true,
+                });
+            }
+        };
+
+        window.addEventListener('moveToLocation', moveToLocationHandler);
+        return () => {
+            window.removeEventListener('moveToLocation', moveToLocationHandler);
+        };
+    }, [map]);
 
     useEffect(() => {
         if (!map.current) return;
