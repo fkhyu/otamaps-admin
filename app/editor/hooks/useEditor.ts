@@ -9,6 +9,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { WallFeature, FurnitureFeature, RoomFeature, EditorMode } from '../lib/types';
 import { FURNITURE_SIZES, DEFAULT_WALL_WIDTH, WALL_HEIGHT, MAPBOX_STYLE, DEFAULT_CENTER, DEFAULT_ZOOM } from '../lib/constants';
 import { debounce, rotateFeature } from '../lib/utils';
+import { url } from 'inspector';
 
 
 const supabase = createClientComponentClient();
@@ -57,6 +58,26 @@ const initializeMapLayers = useCallback(() => {
 
     const mapInstance = map.current;
 
+    const iconList = [
+        {name: 'gem', url: '/icons/gem.png'},
+        {name: 'landmark', url: '/icons/landmark.png'},
+        {name: 'food', url: '/icons/food.png'},
+        {name: 'view', url: '/icons/view.png'},
+        {name: 'event', url: '/icons/event.png'},
+    ]
+
+    iconList.forEach((icon) => {
+        if (!mapInstance.hasImage(icon.name)) {
+            mapInstance.loadImage(icon.url, (error, image) => {
+                if (error) {
+                    console.error('Error loading iconn:', icon.url, error);
+                    return;
+                }
+                mapInstance.addImage(icon.name, image!);
+            })
+        }
+    })
+
     // Add sources
     mapInstance.addSource('walls', {
     type: 'geojson',
@@ -78,17 +99,31 @@ const initializeMapLayers = useCallback(() => {
         data: poiFeatures,
     })
 
+    // Add layers
     mapInstance.addLayer({
         id: 'poi',
         type: 'circle',
         source: 'poi',
+        minzoom: 10,
         paint: {
-            'circle-color': '#0082ff',
-            'circle-radius': 6,
+            'circle-color': '#E78F4A',
+            'circle-radius': 12,
+            'circle-stroke-width': 2,
+            'circle-stroke-color': '#fff',
         },
     })
 
-    // Add layers
+    mapInstance.addLayer({
+        id: 'poi-icons',
+        type: 'symbol',
+        source: 'poi',
+        minzoom: 10,
+        layout: {
+            'icon-image': ['get', 'type'],
+            'icon-size': 0.7,
+        }
+    })
+
     mapInstance.addLayer({
     id: 'walls',
     type: 'fill',
@@ -367,9 +402,10 @@ useEffect(() => {
                     coordinates: [item.lon, item.lat],
                 },
                 properties: {
-                    name: item.name,
-                    description: item.description,
-                    icon: item.icon || 'info',
+                    id: item.id,
+                    title: item.title,
+                    type: item.type || 'landmark',
+                    description: item.desc,
                 },
             })),
         })
@@ -658,6 +694,48 @@ const createFurnitureMarkers = useCallback(
     },
     [selectedFurniture, setFurnitureFeatures]
 );
+
+const showPointInfo = useCallback((feature: Feature) => {
+    if (!feature || !feature.properties) return;
+
+    if (map.current?.getSource('point-info')){
+        if (map.current.getLayer('point-info')) {
+            map.current.removeLayer('point-info');
+        }
+        map.current.removeSource('point-info');
+    }
+
+    if (!feature.properties?.id || !feature.properties?.type) {
+        console.warn('Invalid feature properties:', feature.properties);
+        return;
+    }
+
+    map.current?.addSource('point-info', {
+        type: 'geojson',
+        data: {
+            type: 'FeatureCollection',
+            features: [feature],
+        },
+    });
+
+    if (feature.geometry.type === 'Point') {
+        const coordinates = feature.geometry.coordinates.slice();
+
+        new mapboxgl.Popup()
+            .setLngLat(coordinates as [number, number])
+            .setHTML(
+                `<strong>${feature.properties.title}</strong><br>
+                Type: ${feature.properties.type}<br>
+                Description: ${feature.properties.description || 'No description available.'}`
+            )
+            .addClassName('dark:text-gray-800')
+            .addTo(map.current!);
+
+        console.log('Showing point info:', feature);
+    }
+
+
+}, []);
 
 const setRoomMarkers = useCallback((map: mapboxgl.Map, room: RoomFeature | null) => {
     console.log('Setting room markers for:', room);
@@ -993,10 +1071,10 @@ const handleMapClick = useCallback((e: mapboxgl.MapMouseEvent) => {
     ];
 
     const featuresAtPoint = map.current.queryRenderedFeatures(bbox, {
-    layers: ['rooms', 'furniture', 'walls'],
+    layers: ['rooms', 'furniture', 'walls', 'poi'],
     });
 
-    // console.log('Features at point:', featuresAtPoint);
+    console.log('Features at point:', featuresAtPoint);
 
     if (mode === 'simple_select') {
         const furnitureFeature = featuresAtPoint.find(
@@ -1097,6 +1175,25 @@ const handleMapClick = useCallback((e: mapboxgl.MapMouseEvent) => {
             console.log('Selected wall (fallback):', normalizedWall.id, normalizedWall);
             return;
         }
+    }
+
+
+    const poiFeature = featuresAtPoint.find(
+        (f) => f.layer?.id === 'poi'
+    ) as Feature | undefined;
+    if (poiFeature) {
+        const matchedPOI = poiFeatures.features.find(
+            (f) => f.properties?.id === (poiFeature.id || poiFeature.properties?.id)
+        ) as Feature | undefined;
+
+        console.log('POI feature:', poiFeature, matchedPOI);
+
+        setSelectedFeatureId(poiFeature.properties?.id as string || null);
+        setSelectedFurniture(null);
+        setSelectedRoom(null);
+        showPointInfo(matchedPOI as Feature);
+        console.log('Selected POI:', selectedFeatureId, poiFeature);
+        return;
     }
 
     setSelectedFeatureId(null);
