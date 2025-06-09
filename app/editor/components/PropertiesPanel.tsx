@@ -18,9 +18,11 @@ interface PropertiesPanelProps {
   handleExportGeoJSON: () => void;
   roomFeatures: FeatureCollection;
   wallFeatures: FeatureCollection;
+  poiFeatures: FeatureCollection;
   setWallFeatures: React.Dispatch<React.SetStateAction<FeatureCollection>>;
   setRoomFeatures: React.Dispatch<React.SetStateAction<FeatureCollection>>;
   setFurnitureFeatures: React.Dispatch<React.SetStateAction<FeatureCollection>>;
+  setPoiFeatures: React.Dispatch<React.SetStateAction<FeatureCollection>>;
   setSelectedFeatureId: (id: string | null) => void;
   setSelectedFurniture: (furniture: FurnitureFeature | null) => void;
 }
@@ -35,29 +37,37 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   handleExportGeoJSON,
   roomFeatures,
   wallFeatures,
+  poiFeatures,
   setWallFeatures,
   setRoomFeatures,
   setFurnitureFeatures,
+  setPoiFeatures,
   setSelectedFeatureId,
   setSelectedFurniture,
 }) => {
-  const selectedFeature = (roomFeatures: FeatureCollection, wallFeatures: FeatureCollection) =>
+  // Fix the selectedFeature function - remove duplicates and fix logic
+  const selectedFeature = (roomFeatures: FeatureCollection, wallFeatures: FeatureCollection, poiFeatures: FeatureCollection) =>
     roomFeatures.features.find((f) => f.id === selectedFeatureId) ||
     wallFeatures.features.find((f) => f.id === selectedFeatureId) ||
+    (poiFeatures?.features?.find((f) => f.id === selectedFeatureId)) ||
     null;
-    wallFeatures.features.find((f) => f.id === selectedFeatureId) ||
-    null;
+
+  // Add debug logging
+  console.log('poiFeatures in PropertiesPanel:', poiFeatures);
+  console.log('selectedFeatureId:', selectedFeatureId);
 
   return (
     <div className="w-64 bg-white dark:bg-gray-900 shadow-md p-4 overflow-y-auto">
       <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">Properties</h2>
-      {selectedFeatureId && selectedFeature(roomFeatures, wallFeatures)?.properties?.type === 'room' && (
+      
+      {/* Update all selectedFeature calls to include poiFeatures */}
+      {selectedFeatureId && selectedFeature(roomFeatures, wallFeatures, poiFeatures)?.properties?.type === 'room' && (
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
             <input
               type="text"
-              value={selectedFeature(roomFeatures, wallFeatures)?.properties?.name || ''}
+              value={selectedFeature(roomFeatures, wallFeatures, poiFeatures)?.properties?.name || ''}
               onChange={(e) => updateRoomProperties({ name: e.target.value })}
               className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
             />
@@ -66,7 +76,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <label className="block text-sm font-medium text-gray-700 mb-1">Room number</label>
             <input
               type="text"
-              value={selectedFeature(roomFeatures, wallFeatures)?.properties?.number || ''}
+              value={selectedFeature(roomFeatures, wallFeatures, poiFeatures)?.properties?.number || ''}
               onChange={(e) => {
                 const allowed = /^[0-9\/]*$/;
                 if (allowed.test(e.target.value)) {
@@ -80,7 +90,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
             <input
               type="color"
-              value={selectedFeature(roomFeatures, wallFeatures)?.properties?.color || '#ff0000'}
+              value={selectedFeature(roomFeatures, wallFeatures, poiFeatures)?.properties?.color || '#ff0000'}
               onChange={(e) => updateRoomProperties({ color: e.target.value })}
               className="w-full h-10 border border-gray-300 rounded-md"
             />
@@ -89,7 +99,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
               <input
                 type="checkbox"
-                checked={selectedFeature(roomFeatures, wallFeatures)?.properties?.bookable || false}
+                checked={selectedFeature(roomFeatures, wallFeatures, poiFeatures)?.properties?.bookable || false}
                 onChange={(e) => updateRoomProperties({ bookable: e.target.checked })}
                 className="h-4 w-4 text-blue-500"
               />
@@ -100,7 +110,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <label className="block text-sm font-medium text-gray-700 mb-1">Capacity</label>
             <input
               type="number"
-              value={selectedFeature(roomFeatures, wallFeatures)?.properties?.capacity || 0}
+              value={selectedFeature(roomFeatures, wallFeatures, poiFeatures)?.properties?.capacity || 0}
               onChange={(e) => updateRoomProperties({ capacity: Number(e.target.value) })}
               className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
             />
@@ -109,7 +119,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <label className="block text-sm font-medium text-gray-700 mb-1">Purpose</label>
             <input
               type="text"
-              value={selectedFeature(roomFeatures, wallFeatures)?.properties?.purpose || ''}
+              value={selectedFeature(roomFeatures, wallFeatures, poiFeatures)?.properties?.purpose || ''}
               onChange={(e) => updateRoomProperties({ purpose: e.target.value })}
               className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
             />
@@ -117,7 +127,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Geometry</label>
             <textarea
-              value={JSON.stringify(selectedFeature(roomFeatures, wallFeatures)?.geometry, null, 2)}
+              value={JSON.stringify(selectedFeature(roomFeatures, wallFeatures, poiFeatures)?.geometry, null, 2)}
               onChange={async (e) => {
                 try {
                   const newGeometry = JSON.parse(e.target.value);
@@ -231,7 +241,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           </button>
         </div>
       )}
-      {selectedFeatureId && selectedFeature(roomFeatures, wallFeatures)?.properties?.type === 'wall' && (
+      {selectedFeatureId && selectedFeature(roomFeatures, wallFeatures, poiFeatures)?.properties?.type === 'wall' && (
         <button
           onClick={async () => {
             setWallFeatures((prev) => ({
@@ -252,6 +262,145 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           Delete Wall
         </button>
       )}
+      {selectedFeatureId && (() => {
+        // Fix POI detection - remove the type check since it might not exist
+        const poiFeature = poiFeatures?.features?.find(
+          (f) => f.id === selectedFeatureId
+        );
+        console.log('poiFeature found:', poiFeature);
+        
+        if (!poiFeature) return null;
+        return (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+              <input
+                type="text"
+                value={poiFeature.properties?.title || ''}
+                onChange={async (e) => {
+                  setPoiFeatures((prev) => ({
+                    ...prev,
+                    features: prev.features.map((f) =>
+                      f.id === selectedFeatureId ? { ...f, properties: { ...f.properties, label: e.target.value } } : f
+                    ),
+                  }));
+                  const { error } = await supabase
+                    .from('poi')
+                    .update({ title: e.target.value })
+                    .eq('id', selectedFeatureId);
+                  if (error) {
+                    console.error('Error updating POI label:', error);
+                  }
+                }}
+                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <textarea
+                value={poiFeature.properties?.description || ''}
+                onChange={async (e) => {
+                  setPoiFeatures((prev) => ({
+                    ...prev,
+                    features: prev.features.map((f) =>
+                      f.id === selectedFeatureId ? { ...f, properties: { ...f.properties, description: e.target.value } } : f
+                    ),
+                  }));
+                  const { error } = await supabase
+                    .from('poi')
+                    .update({ desc: e.target.value })
+                    .eq('id', selectedFeatureId);
+                  if (error) {
+                    console.error('Error updating POI description:', error);
+                  }
+                }}
+                className="w-full h-24 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+              <select
+                value={poiFeature.properties?.type || ''}
+                onChange={async (e) => {
+                  // Fix: Update POI in poiFeatures, not roomFeatures
+                  setPoiFeatures((prev) => ({
+                    ...prev,
+                    features: prev.features.map((f) =>
+                      f.id === selectedFeatureId ? { ...f, properties: { ...f.properties, type: e.target.value } } : f
+                    ),
+                  }));
+                  const { error } = await supabase
+                    .from('poi') // Use correct table name
+                    .update({ type: e.target.value })
+                    .eq('id', selectedFeatureId);
+                  if (error) {
+                    console.error('Error updating POI type:', error);
+                  }
+                }}
+                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="landmark">Landmark</option>
+                <option value="event">Event</option>
+                <option value="food">Food</option>
+                <option value="view">View</option>
+                <option value="gem">Gem</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Geometry</label>
+              <textarea
+                value={JSON.stringify(poiFeature.geometry, null, 2)}
+                onChange={async (e) => {
+                  try {
+                    const newGeometry = JSON.parse(e.target.value);
+                    // Fix: Update POI in poiFeatures, not roomFeatures
+                    setPoiFeatures((prev) => ({
+                      ...prev,
+                      features: prev.features.map((f) =>
+                        f.id === selectedFeatureId ? { ...f, geometry: newGeometry } : f
+                      ),
+                    }));
+                    const { error } = await supabase
+                      .from('poi') // Use correct table name
+                      .update({ 
+                        lon: newGeometry.coordinates[0], 
+                        lat: newGeometry.coordinates[1] 
+                      })
+                      .eq('id', selectedFeatureId);
+                    if (error) {
+                      console.error('Error updating POI geometry:', error);
+                    }
+                  } catch (err) {
+                    console.error('Invalid JSON for geometry:', err);
+                  }
+                }}
+                className="w-full h-32 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <button
+              onClick={async () => {
+                // Fix: Update POI in poiFeatures, not roomFeatures
+                setPoiFeatures((prev) => ({
+                  ...prev,
+                  features: prev.features.filter((f) => f.id !== selectedFeatureId),
+                }));
+                setSelectedFeatureId(null);
+                const { error } = await supabase
+                  .from('poi') // Use correct table name
+                  .delete()
+                  .eq('id', selectedFeatureId);
+                if (error) {
+                  console.error('Error deleting POI:', error);
+                }
+              }}
+              className="mt-5 mb-8 w-full bg-red-600 text-white p-2 rounded-md hover:bg-red-700 transition font-medium"
+            >
+              Delete POI
+            </button>
+          </div>
+        );
+      })()}
+
       {!selectedFeatureId && !selectedFurniture && (
         <p className="text-sm text-gray-500">Select a layer to edit its properties.</p>
       )}

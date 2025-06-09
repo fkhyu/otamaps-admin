@@ -16,3 +16,8 @@ export const rotateFeature = (
 ): Feature<Polygon> => {
   return transformRotate(feature, angle, { pivot });
 };
+
+export function capitalise(word: string) {
+    if (!word) return word;
+    return word[0].toUpperCase() + word.substr(1).toLowerCase();
+}
