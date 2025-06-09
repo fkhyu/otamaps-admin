@@ -66,18 +66,6 @@ const initializeMapLayers = useCallback(() => {
         {name: 'event', url: '/icons/event.png'},
     ]
 
-    iconList.forEach((icon) => {
-        if (!mapInstance.hasImage(icon.name)) {
-            mapInstance.loadImage(icon.url, (error, image) => {
-                if (error) {
-                    console.error('Error loading iconn:', icon.url, error);
-                    return;
-                }
-                mapInstance.addImage(icon.name, image!);
-            })
-        }
-    })
-
     // Add sources
     mapInstance.addSource('walls', {
     type: 'geojson',
@@ -99,6 +87,21 @@ const initializeMapLayers = useCallback(() => {
         data: poiFeatures,
     })
 
+    console.log('Adding icons to map:', iconList);
+    iconList.forEach((icon) => {
+        if (!mapInstance.hasImage(icon.name)) {
+            mapInstance.loadImage(icon.url, (error, image) => {
+                if (error) {
+                    console.error('Error loading icon:', icon.name, error);
+                    return;
+                }
+                
+                console.log('Icon loaded:', icon.name, image);
+                mapInstance.addImage(icon.name, image!);
+            });
+        } 
+    })
+
     // Add layers
     mapInstance.addLayer({
         id: 'poi',
@@ -111,7 +114,7 @@ const initializeMapLayers = useCallback(() => {
             'circle-stroke-width': 2,
             'circle-stroke-color': '#fff',
         },
-    })
+    });
 
     mapInstance.addLayer({
         id: 'poi-icons',
@@ -122,7 +125,7 @@ const initializeMapLayers = useCallback(() => {
             'icon-image': ['get', 'type'],
             'icon-size': 0.7,
         }
-    })
+    });
 
     mapInstance.addLayer({
     id: 'walls',
@@ -403,6 +406,7 @@ useEffect(() => {
                 },
                 properties: {
                     id: item.id,
+                    isPOI: true,
                     title: item.title,
                     type: item.type || 'landmark',
                     description: item.desc,
@@ -1179,20 +1183,18 @@ const handleMapClick = useCallback((e: mapboxgl.MapMouseEvent) => {
 
 
     const poiFeature = featuresAtPoint.find(
-        (f) => f.layer?.id === 'poi'
-    ) as Feature | undefined;
+        (f) => f.layer?.id === 'poi' || f.layer?.id === 'poi-icons' || f.properties?.isPOI
+    ) as Feature;
     if (poiFeature) {
+        // Try to match by id or fallback to the feature itself
         const matchedPOI = poiFeatures.features.find(
-            (f) => f.properties?.id === (poiFeature.id || poiFeature.properties?.id)
+            (f) => f.id === (poiFeature.id || poiFeature.properties?.id)
         ) as Feature | undefined;
 
-        console.log('POI feature:', poiFeature, matchedPOI);
-
-        setSelectedFeatureId(poiFeature.properties?.id as string || null);
+        setSelectedFeatureId((poiFeature.id as string) || (poiFeature.properties?.id as string) || null);
         setSelectedFurniture(null);
         setSelectedRoom(null);
-        showPointInfo(matchedPOI as Feature);
-        console.log('Selected POI:', selectedFeatureId, poiFeature);
+        showPointInfo(matchedPOI || poiFeature);
         return;
     }
 
