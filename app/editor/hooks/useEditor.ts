@@ -1333,70 +1333,122 @@ const handleNativeDrop = useCallback(async (e: DragEvent) => {
     const data = e.dataTransfer?.getData('application/json');
     if (!data) return;
 
-    const furnitureItem = JSON.parse(data);
+    const item = JSON.parse(data);
+    console.log('Dropped furniture item:', item);
     const rect = mapContainer.current?.getBoundingClientRect();
     let clientX = e.clientX;
     let clientY = e.clientY;
     if (rect) {
-    clientX = e.clientX - rect.left;
-    clientY = e.clientY - rect.top;
+        clientX = e.clientX - rect.left;
+        clientY = e.clientY - rect.top;
     }
     const point = map.current.unproject([clientX, clientY]);
     const lngLat: [number, number] = [point.lng, point.lat];
 
-    const size = FURNITURE_SIZES[furnitureItem.id as keyof typeof FURNITURE_SIZES] || FURNITURE_SIZES.cube;
-    const halfWidth = size.width / 2 / 50000;
-    const halfDepth = size.depth / 2 / 50000;
+    console.log(item)
+    if (item.type && item.type === 'poi') {
+        const coords: [number, number][] = [
+            [lngLat[0], lngLat[1] - 0.0001]
+        ];
 
-    const coords: [number, number][] = [
-    [lngLat[0] - halfWidth, lngLat[1] - halfDepth],
-    [lngLat[0] + halfWidth, lngLat[1] - halfDepth],
-    [lngLat[0] + halfWidth, lngLat[1] + halfDepth],
-    [lngLat[0] - halfWidth, lngLat[1] + halfDepth],
-    [lngLat[0] - halfWidth, lngLat[1] - halfDepth],
-    ];
+        const uniqueId = generateUniqueId();
+        const newPOI: Feature = {
+            type: item.type,
+            id: uniqueId,
+            geometry: {
+                type: 'Point',
+                coordinates: lngLat,
+            },
+            properties: {
+                type: item.properties.type || 'landmark',
+                id: uniqueId,
+                title: item.name,
+                description: item.description || '',
+                image_url: item.image_url || '',
+                isPOI: true,
+            },
+        };
+        setPoiFeatures((prev) => ({
+            ...prev,
+            features: [...prev.features, newPOI],
+        }));
+        setSelectedFeatureId(uniqueId);
+        setSelectedFurniture(null);
+        setSelectedRoom(null);
+        console.log('item:', item);
+        const { error } = await supabase
+        .from('poi')
+        .insert({
+            id: uniqueId,
+            created_at: new Date().toISOString(),
+            lat: lngLat[1],
+            lon: lngLat[0],
+            title: item.title,
+            desc: item.description || null,
+            image_url: item.image_url || null,
+            address: item.address || null,
+            type: item.properties.type || 'landmark',
+            event_id: item.event_id || null,
+        });
+        if (error) {
+            console.error('Error inserting POI:', error);
+        }
+        return;
+    } else {
+        const size = FURNITURE_SIZES[item.id as keyof typeof FURNITURE_SIZES];
+        const halfWidth = size.width / 2 / 50000;
+        const halfDepth = size.depth / 2 / 50000;
 
-    const uniqueId = generateUniqueId();
+        const coords: [number, number][] = [
+            [lngLat[0] - halfWidth, lngLat[1] - halfDepth],
+            [lngLat[0] + halfWidth, lngLat[1] - halfDepth],
+            [lngLat[0] + halfWidth, lngLat[1] + halfDepth],
+            [lngLat[0] - halfWidth, lngLat[1] + halfDepth],
+            [lngLat[0] - halfWidth, lngLat[1] - halfDepth],
+        ];
 
-    const newFurniture: FurnitureFeature = {
-    type: 'Feature',
-    id: uniqueId,
-    geometry: {
-        type: 'Polygon',
-        coordinates: [coords],
-    },
-    properties: {
-        type: 'furniture',
-        id: uniqueId,
-        item: furnitureItem.name,
-        emoji: furnitureItem.icon,
-        height: size.height,
-        shape: furnitureItem.shape,
-        label: '',
-    },
-    };
+        const uniqueId = generateUniqueId();
 
-    setFurnitureFeatures((prev) => ({
-    ...prev,
-    features: [...prev.features, newFurniture],
-    }));
+        const newFurniture: FurnitureFeature = {
+            type: 'Feature',
+            id: uniqueId,
+            geometry: {
+                type: 'Polygon',
+                coordinates: [coords],
+        },
+        properties: {
+            type: 'furniture',
+            id: uniqueId,
+            item: item.name,
+            emoji: item.icon,
+            height: size.height,
+            shape: item.shape,
+            label: '',
+        },
+        };
 
-    setSelectedFurniture(newFurniture);
-    setSelectedFeatureId(null);
+        setFurnitureFeatures((prev) => ({
+        ...prev,
+        features: [...prev.features, newFurniture],
+        }));
 
-    const { error } = await supabase
-    .from('features')
-    .insert({
-        id: uniqueId,
-        geometry: newFurniture.geometry,
-        type: 'furniture',
-        name: furnitureItem.name,
-        icon: furnitureItem.icon,
-        label: '',
-    });
+        setSelectedFurniture(newFurniture);
+        setSelectedFeatureId(null);
 
-    if (error) {
-    console.error('Error inserting furniture:', error);
+        const { error } = await supabase
+        .from('features')
+        .insert({
+            id: uniqueId,
+            geometry: newFurniture.geometry,
+            type: 'furniture',
+            name: item.name,
+            icon: item.icon,
+            label: '',
+        });
+
+        if (error) {
+            console.error('Error inserting furniture:', error);
+        }
     }
 }, []);
 

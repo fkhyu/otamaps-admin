@@ -281,7 +281,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   setPoiFeatures((prev) => ({
                     ...prev,
                     features: prev.features.map((f) =>
-                      f.id === selectedFeatureId ? { ...f, properties: { ...f.properties, label: e.target.value } } : f
+                      f.id === selectedFeatureId ? { ...f, properties: { ...f.properties, title: e.target.value } } : f
                     ),
                   }));
                   const { error } = await supabase
@@ -345,6 +345,29 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 <option value="view">View</option>
                 <option value="gem">Gem</option>
               </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Image URL</label>
+              <input
+                type="text"
+                value={poiFeature.properties?.image_url || ''}
+                onChange={async (e) => {
+                  setPoiFeatures((prev) => ({
+                    ...prev,
+                    features: prev.features.map((f) =>
+                      f.id === selectedFeatureId ? { ...f, properties: { ...f.properties, image_url: e.target.value } } : f
+                    ),
+                  }));
+                  const { error } = await supabase
+                    .from('poi')
+                    .update({ image_url: e.target.value })
+                    .eq('id', selectedFeatureId);
+                  if (error) {
+                    console.error('Error updating POI icon:', error);
+                  }
+                }}
+                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Geometry</label>
