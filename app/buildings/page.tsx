@@ -29,12 +29,25 @@ export default function BuildingsPage() {
   const [mapContainer, setMapContainer] = useState<HTMLDivElement | null>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const markers = useRef<mapboxgl.Marker[]>([]);
+  const [mapLoaded, setMapLoaded] = useState(false); // Add this state
 
   // Handle Escape key to deselect building
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setSelectedBuilding(null);
+        markers.current.forEach(marker => {
+          const el = marker.getElement();
+          el.style.backgroundColor = '#3b82f6'; // Reset color
+          // Don't override transform - let Mapbox handle positioning
+          const currentTransform = el.style.transform;
+          const scaleRegex = /scale\([^)]*\)/;
+          if (scaleRegex.test(currentTransform)) {
+            el.style.transform = currentTransform.replace(scaleRegex, 'scale(1)');
+          } else {
+            el.style.transform = currentTransform + ' scale(1)';
+          }
+        });
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -56,6 +69,26 @@ export default function BuildingsPage() {
 
     map.current.on('load', () => {
       console.log('Map loaded successfully');
+      setMapLoaded(true); // Set map as loaded
+    });
+
+    map.current.on('click', (e) => {
+      const target = e.originalEvent.target as HTMLElement;
+      if (!target.closest('.building-marker')) {
+        setSelectedBuilding(null);
+        markers.current.forEach(marker => {
+          const el = marker.getElement();
+          el.style.backgroundColor = '#3b82f6';
+          // Don't override transform - let Mapbox handle positioning
+          const currentTransform = el.style.transform;
+          const scaleRegex = /scale\([^)]*\)/;
+          if (scaleRegex.test(currentTransform)) {
+            el.style.transform = currentTransform.replace(scaleRegex, 'scale(1)');
+          } else {
+            el.style.transform = currentTransform + ' scale(1)';
+          }
+        });
+      }
     });
 
     return () => {
@@ -64,6 +97,7 @@ export default function BuildingsPage() {
         map.current.remove();
         map.current = null;
       }
+      setMapLoaded(false);
     };
   }, [mapContainer]);
 
@@ -96,7 +130,9 @@ export default function BuildingsPage() {
 
   // Add building markers to map
   useEffect(() => {
-    if (!map.current || buildings.length === 0) return;
+    if (!map.current || !mapLoaded || buildings.length === 0) return; // Check mapLoaded
+
+    console.log('Adding markers to map...');
 
     // Clear existing markers
     markers.current.forEach(marker => marker.remove());
@@ -114,17 +150,23 @@ export default function BuildingsPage() {
         border: 2px solid white;
         cursor: pointer;
         box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        transition: all 0.2s ease;
       `;
 
+      console.log(`Adding marker for building: ${building.name} at [${building.lon}, ${building.lat}]`);
+      
       const marker = new mapboxgl.Marker(el)
         .setLngLat([building.lon, building.lat])
         .setPopup(
           new mapboxgl.Popup({ offset: 25 })
             .setHTML(`<h3>${building.name}</h3><p>${building.address || ''}</p>`)
-        )
-        .addTo(map.current!);
+        );
 
-      el.addEventListener('click', () => {
+      marker.addTo(map.current!);
+      console.log(`Marker added for building: ${building.name}`);
+      
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
         setSelectedBuilding(building);
       });
 
@@ -139,7 +181,7 @@ export default function BuildingsPage() {
       });
       map.current.fitBounds(bounds, { padding: 50 });
     }
-  }, [buildings]);
+  }, [buildings, mapLoaded]); // Add mapLoaded to dependencies
 
   // Highlight selected building
   useEffect(() => {
@@ -157,10 +199,24 @@ export default function BuildingsPage() {
       const el = marker.getElement();
       if (buildings[index]?.id === selectedBuilding.id) {
         el.style.backgroundColor = '#ef4444';
-        el.style.transform = 'scale(1.2)';
+        // Preserve existing transform and modify scale
+        const currentTransform = el.style.transform;
+        const scaleRegex = /scale\([^)]*\)/;
+        if (scaleRegex.test(currentTransform)) {
+          el.style.transform = currentTransform.replace(scaleRegex, 'scale(1.2)');
+        } else {
+          el.style.transform = currentTransform + ' scale(1.2)';
+        }
       } else {
         el.style.backgroundColor = '#3b82f6';
-        el.style.transform = 'scale(1)';
+        // Preserve existing transform and modify scale
+        const currentTransform = el.style.transform;
+        const scaleRegex = /scale\([^)]*\)/;
+        if (scaleRegex.test(currentTransform)) {
+          el.style.transform = currentTransform.replace(scaleRegex, 'scale(1)');
+        } else {
+          el.style.transform = currentTransform + ' scale(1)';
+        }
       }
     });
   }, [selectedBuilding, buildings]);
@@ -187,7 +243,7 @@ export default function BuildingsPage() {
                 className={`rounded-xl px-4 py-2 hover:bg-gray-200 hover:cursor-pointer ${
                   selectedBuilding?.id === building.id ? 'bg-gray-200' : ''
                 }`}
-                onClick={() => setSelectedBuilding(building)}
+                onClick={() => setSelectedBuilding(building)} // and change marker
               >
                 <h2 className="text-md text-gray-700 font-medium">{building.name}</h2>
               </div>
@@ -263,7 +319,7 @@ export default function BuildingsPage() {
                   <input
                     id="buildingLat"
                     type="number"
-                    step="any"
+                    step="0.0001"
                     value={selectedBuilding.lat}
                     className="px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 ring-blue-500 outline-0"
                     onChange={(e) => setSelectedBuilding({ ...selectedBuilding, lat: parseFloat(e.target.value) })}
@@ -276,7 +332,7 @@ export default function BuildingsPage() {
                   <input
                     id="buildingLon"
                     type="number"
-                    step="any"
+                    step="0.0001"
                     value={selectedBuilding.lon}
                     className="px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 ring-blue-500 outline-0"
                     onChange={(e) => setSelectedBuilding({ ...selectedBuilding, lon: parseFloat(e.target.value) })}
