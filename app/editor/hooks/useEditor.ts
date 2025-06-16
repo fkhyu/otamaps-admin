@@ -1376,10 +1376,11 @@ const handleNativeDrop = useCallback(async (e: DragEvent) => {
         setSelectedFurniture(null);
         setSelectedRoom(null);
         console.log('item:', item);
+        const poiUniqueId = uniqueId;
         const { error } = await supabase
         .from('poi')
         .insert({
-            id: uniqueId,
+            id: poiUniqueId,
             created_at: new Date().toISOString(),
             lat: lngLat[1],
             lon: lngLat[0],
@@ -1392,6 +1393,23 @@ const handleNativeDrop = useCallback(async (e: DragEvent) => {
         });
         if (error) {
             console.error('Error inserting POI:', error);
+            return;
+        }
+
+        if (item.properties.type === 'event') {
+            console.log('event detected')
+            const { error } = await supabase
+                .from('events')
+                .insert({
+                    id: uniqueId,
+                    name: item.title,
+                    description: item.description,
+                    created_at: new Date().toISOString(),
+                    poi_id: poiUniqueId, 
+                });
+            if (error) {
+                console.error('Error inserting event:', error);
+            }
         }
         return;
     } else {

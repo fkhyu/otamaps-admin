@@ -6,5 +6,9 @@ export const navLinks = {
     mapEditor: {
         label: "Map Editor",
         link: "/editor"
+    },
+    events: {
+        label: "Events",
+        link: "/events"
     }
 }

@@ -190,7 +190,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               value={rotationInput}
               onChange={(e) => setRotationInput(Number(e.target.value))}
               onBlur={() => updateFurnitureTransform({ rotation: rotationInput })}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+              className=  "w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div>
@@ -263,7 +263,6 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         </button>
       )}
       {selectedFeatureId && (() => {
-        // Fix POI detection - remove the type check since it might not exist
         const poiFeature = poiFeatures?.features?.find(
           (f) => f.id === selectedFeatureId
         );
@@ -272,51 +271,56 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         if (!poiFeature) return null;
         return (
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-              <input
-                type="text"
-                value={poiFeature.properties?.title || ''}
-                onChange={async (e) => {
-                  setPoiFeatures((prev) => ({
-                    ...prev,
-                    features: prev.features.map((f) =>
-                      f.id === selectedFeatureId ? { ...f, properties: { ...f.properties, title: e.target.value } } : f
-                    ),
-                  }));
-                  const { error } = await supabase
-                    .from('poi')
-                    .update({ title: e.target.value })
-                    .eq('id', selectedFeatureId);
-                  if (error) {
-                    console.error('Error updating POI label:', error);
-                  }
-                }}
-                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-              <textarea
-                value={poiFeature.properties?.description || ''}
-                onChange={async (e) => {
-                  setPoiFeatures((prev) => ({
-                    ...prev,
-                    features: prev.features.map((f) =>
-                      f.id === selectedFeatureId ? { ...f, properties: { ...f.properties, description: e.target.value } } : f
-                    ),
-                  }));
-                  const { error } = await supabase
-                    .from('poi')
-                    .update({ desc: e.target.value })
-                    .eq('id', selectedFeatureId);
-                  if (error) {
-                    console.error('Error updating POI description:', error);
-                  }
-                }}
-                className="w-full h-24 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
+            {poiFeature.properties?.type !== 'event' && (
+              <div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                  <input
+                    type="text"
+                    value={poiFeature.properties?.title || ''}
+                    onChange={async (e) => {
+                      setPoiFeatures((prev) => ({
+                        ...prev,
+                        features: prev.features.map((f) =>
+                          f.id === selectedFeatureId ? { ...f, properties: { ...f.properties, title: e.target.value } } : f
+                        ),
+                      }));
+                      const { error } = await supabase
+                        .from('poi')
+                        .update({ title: e.target.value })
+                        .eq('id', selectedFeatureId);
+                      if (error) {
+                        console.error('Error updating POI label:', error);
+                      }
+                    }}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <textarea
+                    value={poiFeature.properties?.description || ''}
+                    onChange={async (e) => {
+                      setPoiFeatures((prev) => ({
+                        ...prev,
+                        features: prev.features.map((f) =>
+                          f.id === selectedFeatureId ? { ...f, properties: { ...f.properties, description: e.target.value } } : f
+                        ),
+                      }));
+                      const { error } = await supabase
+                        .from('poi')
+                        .update({ desc: e.target.value })
+                        .eq('id', selectedFeatureId);
+                      if (error) {
+                        console.error('Error updating POI description:', error);
+                      }
+                    }}
+                    className="w-full h-24 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
               <select
@@ -329,12 +333,75 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                       f.id === selectedFeatureId ? { ...f, properties: { ...f.properties, type: e.target.value } } : f
                     ),
                   }));
-                  const { error } = await supabase
-                    .from('poi') // Use correct table name
+                  const { error: poiUpdateError } = await supabase
+                    .from('poi')
                     .update({ type: e.target.value })
                     .eq('id', selectedFeatureId);
-                  if (error) {
-                    console.error('Error updating POI type:', error);
+                  if (poiUpdateError) {
+                    console.error('Error updating POI type:', poiUpdateError);
+                    return;
+                  }
+                  if (e.target.value === 'event') {
+                    const { data:poiExists } = await supabase
+                      .from('poi')
+                      .select('id')
+                      .eq('id', selectedFeatureId)
+                      .single();
+
+                    if (!poiExists) {
+                      console.error("POI feature doesn't exist, cannot create event");
+                      return;
+                    }
+
+                    const { data:existinEvents, error:checkError } = await supabase
+                      .from('events')
+                      .select('*')
+                      .eq('poi_id', selectedFeatureId);
+
+                    if (checkError) {
+                      console.error('Joo error lol', checkError);
+                    }
+                    if (existinEvents) {
+                      if (existinEvents.length === 0) {
+                        const oneYearFromNow = new Date();
+                        oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+
+                        const poi = poiFeatures.features.find(f => f.id === selectedFeatureId);
+                        const { error:eventError } = await supabase
+                          .from('events')
+                          .insert({
+                          id: crypto.randomUUID(),
+                          name: poi?.properties?.title || '',
+                          start_time: oneYearFromNow, 
+                          end_time: oneYearFromNow,
+                          description: poi?.properties?.description,
+                          created_at: new Date().toISOString(),
+                          poi_id: selectedFeatureId, 
+                          });
+                        if (eventError) {
+                            console.error('Error inserting event:', eventError);
+                        }
+                      }
+                    }
+                  } else {
+                    const { data, error } = await supabase
+                      .from('events')
+                      .select('*')
+                      .eq('poi_id', selectedFeatureId);
+
+                    if (error) {
+                      console.error('Joo error lol')
+                    }
+
+                    if (data) {
+                        const { error } = await supabase
+                        .from('events')
+                        .delete()
+                        .eq('poi_id', selectedFeatureId);
+                        if (error) {
+                          console.error('Error deleting event(s) for POI:', error);
+                        }
+                    }
                   }
                 }}
                 className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
@@ -346,6 +413,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 <option value="gem">Gem</option>
               </select>
             </div>
+            {poiFeature.properties?.type !== 'event' && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Image URL</label>
               <input
@@ -369,6 +437,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
               />
             </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Geometry</label>
               <textarea
@@ -400,26 +469,36 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 className="w-full h-32 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            <button
-              onClick={async () => {
-                // Fix: Update POI in poiFeatures, not roomFeatures
-                setPoiFeatures((prev) => ({
-                  ...prev,
-                  features: prev.features.filter((f) => f.id !== selectedFeatureId),
-                }));
-                setSelectedFeatureId(null);
-                const { error } = await supabase
-                  .from('poi') // Use correct table name
-                  .delete()
-                  .eq('id', selectedFeatureId);
-                if (error) {
-                  console.error('Error deleting POI:', error);
-                }
-              }}
-              className="mt-5 mb-8 w-full bg-red-600 text-white p-2 rounded-md hover:bg-red-700 transition font-medium"
-            >
-              Delete POI
-            </button>
+            { poiFeature.properties?.type !== 'event' && (
+              <button
+                onClick={async () => {
+                  // Fix: Update POI in poiFeatures, not roomFeatures
+                  setPoiFeatures((prev) => ({
+                    ...prev,
+                    features: prev.features.filter((f) => f.id !== selectedFeatureId),
+                  }));
+                  setSelectedFeatureId(null);
+                  const { error } = await supabase
+                    .from('poi') // Use correct table name
+                    .delete()
+                    .eq('id', selectedFeatureId);
+                  if (error) {
+                    console.error('Error deleting POI:', error);
+                  }
+                }}
+                className="mt-5 mb-8 w-full bg-red-600 text-white p-2 rounded-md hover:bg-red-700 transition font-medium"
+              >
+                Delete POI
+              </button>
+            )}
+            {poiFeature.properties?.type === 'event' && (
+              <button
+                className='mt-5 mb-8 w-full bg-blue-600 text-white p-2 rounded-md hover:bg-blue-700 transition font-medium'
+                onClick={() => { window.location.href = `/events?id=${selectedFeatureId}`; }}
+              >
+                Modify event
+              </button>
+            )}
           </div>
         );
       })()}
