@@ -24,7 +24,7 @@ type User = {
     created_at: Timestamp;
 }
 
-function EventsPage() {
+function EventsPageContent() {
     type Event = {
         id: string;
         name: string;
