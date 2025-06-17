@@ -20,7 +20,7 @@ export default function UsersPage() {
 
             if (error) {
                 console.error('Error:', error)
-                setError()
+                setError(error instanceof Error ? error.message : 'An unexpected error occurred');
             }
         }
     })
