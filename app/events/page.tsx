@@ -55,7 +55,7 @@ export default function EventsPage() {
     const eventId = searchParams.get('id');
 
     // For participant management
-    const [users, setUsers] = useState<User | null>(null);
+    const [users, setUsers] = useState<User[]>([]);
     const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
     const [participantInput, setParticipantInput] = useState('');
     const [showDropdown, setShowDropdown] = useState(false);
@@ -112,8 +112,8 @@ export default function EventsPage() {
         }
 
         const filtered = users?.filter(user =>
-            user.name.toLowerCase().includes(participantInput.toLowerCase()) || 
-            (user.email && user.email.toLowerCase().includes(participantInput.toLowerCase()))
+            user.name?.toLowerCase().includes(participantInput.toLowerCase()) || 
+            (user.id && user.id?.toLowerCase().includes(participantInput.toLowerCase()))
         );
 
         setFilteredUsers(filtered || []);
@@ -135,43 +135,65 @@ export default function EventsPage() {
     // Initialize participants when event is selected
     useEffect(() => {
         if (selectedEvent) {
-            setSelectedParticipants(selectedEvent.participants || []);
+            if (selectedEvent.participants && Array.isArray(selectedEvent.participants)) {
+                const participantUsers = users.filter(user =>
+                    selectedEvent.participants?.includes(user.id)
+                );
+                setSelectedParticipants(participantUsers);
+            } else {
+                setSelectedParticipants([]);
+            }
         }
-    }, [selectedEvent]);
+    }, [selectedEvent, users]);
 
-    const handleAddParticipant = (userEmail: string) => {
-        if (!selectedParticipants.includes(userEmail)) {
-            const newParticipants = [...selectedParticipants, userEmail];
+    const handleAddParticipant = async (userId: string) => {
+        console.log('Adding participant:', userId, selectedParticipants);
+        const userToAdd = users.find(user => user.id === userId);
+        if (!userToAdd) return;
+
+        if (!selectedParticipants.some(user => user.id === userId)) {
+            const newParticipants = [...selectedParticipants, userToAdd];
+            console.log('New participants:', newParticipants);
             setSelectedParticipants(newParticipants);
-            
+
             if (selectedEvent) {
                 setSelectedEvent({
                     ...selectedEvent,
-                    participants: newParticipants
+                    participants: newParticipants.map(user => user.id)
                 });
+
+                const { error } = await supabase
+                    .from('events')
+                    .update({
+                        participants: newParticipants.map(user=>user.id)
+                    })
+                    .eq('id', selectedEvent.id);
+
+                if (error) {
+                    console.error('Error updating participants:', error);
+                    setError(error instanceof Error ? error.message : 'An unexpected error occurred');
+                }
             }
         }
         setParticipantInput('');
         setShowDropdown(false);
     };
 
-    const handleRemoveParticipant = (userEmail: string) => {
-        if (!selectedParticipants.includes(userEmail)) {
-            const newParticipants = [...selectedParticipants, userEmail];
-            setSelectedParticipants(newParticipants);
+    const handleRemoveParticipant = (userToRemove: User) => {
+        const newParticipants = selectedParticipants.filter(user => user.id !== userToRemove.id);
+        setSelectedParticipants(newParticipants);
 
-            if (selectedEvent) {
-                setSelectedEvent({
-                    ...selectedEvent,
-                    participants: newParticipants
-                });
-            }
+        if (selectedEvent) {
+            setSelectedEvent({
+                ...selectedEvent,
+                participants: newParticipants.map(user => user.id)
+            });
         }
     };
 
-    // Open event if specified in URL
+    // Open event if specified in URL, only after loading is complete
     useEffect(() => {
-        if (eventId && events.length > 0) {
+        if (!loading && eventId && events.length > 0) {
             const timer = setTimeout(() => {
                 const eventFromUrl = events.find(event => event.poi_id === eventId);
                 if (eventFromUrl) {
@@ -181,20 +203,34 @@ export default function EventsPage() {
                     console.log('No event found with ID:', eventId);
                 }
             }, 100);
-        } 
-    }, [eventId, events]);
+            return () => clearTimeout(timer);
+        }
+    }, [loading, eventId]);
 
     // Listen for escape key
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.key === 'Escape') {
                 setSelectedEvent(null);
+                // window.location.href = '/events';
                 setIsModalOpen(false);
             }
         }
         window.addEventListener('keydown', handleKeyDown);
         return () => window.addEventListener('keydown', handleKeyDown);
     }, []);
+
+    // set selected participants when event is selected
+    useEffect(() => {
+        if (selectedEvent && selectedEvent.participants && Array.isArray(selectedEvent.participants)) {
+            const participantUsers = users.filter(user => 
+                selectedEvent.participants?.includes(user.id)
+            );
+            setSelectedParticipants(participantUsers);
+        } else {
+            setSelectedParticipants([]);    
+        }
+    }, [selectedEvent, users])
 
     useEffect(() => {
         if (map.current || !mapContainer) return;
@@ -213,6 +249,7 @@ export default function EventsPage() {
             const target = e.originalEvent.target as HTMLElement;
             if (!target.closest('.event-marker')) {
                 setSelectedEvent(null);
+                // window.location.href = '/events';
                 markers.current.forEach(marker => {
                     const el = marker.getElement();
                     el.style.backgroundColor = '#3b82f6';
@@ -374,6 +411,7 @@ export default function EventsPage() {
             el.addEventListener('click', (e) => {
                 e.stopPropagation();
                 setSelectedEvent(event);
+                // window.location.href = `/events?id=${event.poi_id}`;
             });
 
             marker.on('dragend', async () => {
@@ -512,7 +550,7 @@ export default function EventsPage() {
                                 className={`rounded-lg px-4 py-2 hover:bg-gray-200 hover:cursor-pointer ${
                                     selectedEvent?.id === event.id ? 'bg-gray-200' : ''
                                 }`}
-                                onClick={() => setSelectedEvent(event)}
+                                onClick={() => {setSelectedEvent(event);}}
                             >
                                 <h2 className='text-md text-gray-700 font-medium'>{event.name}</h2>
                             </div>
@@ -609,13 +647,13 @@ export default function EventsPage() {
                                 <div className='flex flex-wrap gap-2 mb-2'>
                                     {selectedParticipants.map((participant, index) => (
                                         <span
-                                            className='bg-blue-100 text-blue-800 px-3 py-1 rounded-full flex items-center gap-2'
+                                            className=' bg-blue-100 text-blue-800 px-3 py-1 rounded-full flex items-center gap-2'
                                             key={index}
                                         >
-                                            {participant}
+                                            {participant.name || participant.email}
                                             <button
                                                 onClick={() => handleRemoveParticipant(participant)}
-                                                className='text-red-500 hover:text-red-700 ml-1'
+                                                className='text-blue-500 hover:text-blue-700 ml-1'
                                             >
                                                 ×
                                             </button>
@@ -623,6 +661,8 @@ export default function EventsPage() {
                                     ))}
                                 </div>
                             )}
+                            
+                            {}
 
                             <div className='relative'>
                                 <input
@@ -640,9 +680,9 @@ export default function EventsPage() {
                                             <div
                                                 key={user.id}
                                                 className='px-4 py-2 hover:bg-gray-100 cursor-pointer'
-                                                onClick={() => handleAddParticipant(user.email)}
+                                                onClick={() => handleAddParticipant(user.id)}
                                             >
-                                                <span className='font-medium'>{user.name || user.email}</span>
+                                                <span className='font-medium flex flex-col'>{user.name || user.email}</span>
                                                 {user.name && (
                                                     <span className='text-sm text-gray-500'>{user.email}</span>
                                                 )}
