@@ -10,5 +10,9 @@ export const navLinks = {
     events: {
         label: "Events",
         link: "/events"
-    }
+    },
+    users: {
+        label: "Users",
+        link: "/users"
+    },
 }

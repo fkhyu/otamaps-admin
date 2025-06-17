@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css'
@@ -24,7 +24,7 @@ type User = {
     created_at: Timestamp;
 }
 
-export default function EventsPage() {
+function EventsPage() {
     type Event = {
         id: string;
         name: string;
@@ -738,3 +738,13 @@ export default function EventsPage() {
     )
 }
 
+export default function EventsPage() {
+    return (
+        <Suspense fallback={
+            <div className="w-full h-[100vh] flex justify-center items-center">Loading...</div>
+        }
+        >
+            <EventsPageContent />
+        </Suspense>
+    )
+}
