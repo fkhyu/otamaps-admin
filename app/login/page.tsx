@@ -29,10 +29,25 @@ export default function LoginPage() {
   }, [router]);
 
   return (
-    <div className="flex items-center justify-center h-screen">
+    <div className="flex items-center justify-center h-screen bg-gray-950">
       <Auth
         supabaseClient={supabase}
-        appearance={{ theme: ThemeSupa }}
+        appearance={{
+          theme: ThemeSupa,
+          variables: {
+            default: {
+              colors: {
+                brand: "#1c81db",
+                brandAccent: '#449dec'
+              }
+            },
+            
+          },
+          extend: true,
+          style: {
+            input: { color: 'white', background: '#1e2939', border: '#364153' },
+          }
+        }}
         providers={[]}
         redirectTo={typeof window !== 'undefined' ? window.location.origin + '/' : undefined}
       />
