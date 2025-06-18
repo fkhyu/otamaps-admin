@@ -32,6 +32,19 @@ export default function LoginPage() {
     <div className="flex items-center justify-center h-screen bg-gray-950">
       <Auth
         supabaseClient={supabase}
+        view="sign_in"
+        showLinks={false}
+        localization={{
+          variables: {
+            sign_in: {
+              email_label: "Email",
+              email_input_placeholder: "Enter your email",
+              password_label: "Password",
+              button_label: "Log In",
+              link_text: "Forgot your password?",
+            }
+          },
+        }}
         appearance={{
           theme: ThemeSupa,
           variables: {
