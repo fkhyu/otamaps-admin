@@ -17,7 +17,7 @@ export default function LogoutForm() {
     <form onSubmit={handleLogout} className="inline">
       <button
         type="submit"
-        className="ml-4 text-red-500 hover:underline bg-transparent border-none p-0 cursor-pointer"
+        className="w-36 py-2 flex items-center justify-center bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white border-none cursor-pointer rounded-lg mt-4"
       >
         Logout
       </button>

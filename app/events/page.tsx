@@ -531,9 +531,19 @@ function EventsPageContent() {
         <div className='flex h-screen'>
             <div className='w-1/5 h-full flex flex-col items-center bg-gray-100 p-4'>
                 <div className='flex flex-row justify-between items-center w-full mb-4 pb-3 border-b border-gray-300'>
-                    <h1 className='text-2xl font-bold py-2'>Events</h1>
+                    <div className='flex flex-row itens-center gap-3'>
+                        <button
+                            className='w-10 h-10 flex items-center justify-center bg-gray-200 text-gray-600 text-2xl rounded-lg'
+                            onClick={() => {
+                            window.location.href = '/';
+                            }}
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#000"><path d="M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z"/></svg>
+                        </button>
+                        <h1 className='text-2xl font-bold my-auto'>Events</h1>
+                    </div>
                     <button
-                        className="text-blue-500 text-2xl px-2 py-0 cursor-pointer leading-0 hover:bg-blue-100 rounded"
+                        className="w-10 h-10 bg-blue-100 text-blue-600 text-2xl rounded-lg"
                         onClick={() => window.location.href='/editor'}
                     >
                         +
