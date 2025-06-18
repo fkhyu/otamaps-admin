@@ -137,18 +137,18 @@ export default function UsersPage() {
 
   return (
     <div className="w-full h-[100vh] py-5 px-24">
-      <div className="w-full py-4 flex flex-row justify-between items-center pb-6 border-b border-gray-200 mb-12">
+      <div className="w-full py-4 flex flex-row justify-between items-center pb-6 border-b border-gray-200 dark:border-gray-800 mb-12">
         <div className='flex flex-row gap-2'>
           <button
-            className='w-10 h-10 flex items-center justify-center bg-gray-100 text-gray-600 text-2xl rounded-lg'
+            className='w-10 h-10 flex items-center justify-center bg-gray-500/10 dark:bg-gray-600 text-gray-600 text-2xl rounded-lg'
             onClick={() => {
               window.location.href = '/';
             }}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#000"><path d="M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#000" className='dark:fill-white'><path d="M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z"/></svg>
           </button>
           <button 
-            className='w-10 h-10 bg-blue-100 text-blue-600 text-2xl rounded-lg'
+            className='w-10 h-10 bg-blue-500/10 dark:bg-blue-500/35 text-blue-600 dark:text-blue-400 text-2xl rounded-lg'
             onClick={() => {
                 const uid = crypto.randomUUID();
                 setUsers((prev) => [
@@ -204,22 +204,22 @@ export default function UsersPage() {
         <div className="w-full">
           <div className="w-full mb-6">
             <div className='w-full flex flex-row justify-between items-center'>
-              <div className="block text-start px-6 border border-gray-100 py-2 bg-gray-100 text-gray-800 w-[20%] rounded-l-lg">ID</div>
-              <div className="block text-start px-6 border border-gray-100 py-2 bg-gray-100 text-gray-800 w-[20%]">Name</div>
-              <div className="block text-start px-6 border border-gray-100 py-2 bg-gray-100 text-gray-800 w-[20%]">Email</div>
-              <div className="block text-start px-6 border border-gray-100 py-2 bg-gray-100 text-gray-800 w-[8%]">Role</div>
-              <div className="block text-start px-6 border border-gray-100 py-2 bg-gray-100 text-gray-800 w-[16%]">Country</div>
-              <div className="block text-start px-6 border border-gray-100 py-2 bg-gray-100 text-gray-800 w-[8%]">Age</div>
-              <div className='block text-center px-6 border border-gray-100 py-2 bg-gray-100 text-gray-800 w-[8%] rounded-r-lg'>Actions</div>
+              <div className="block text-start px-6 border border-gray-100 dark:border-blue-900 dark:bg-blue-900 py-2 bg-gray-100 text-gray-800 dark:text-gray-100 w-[20%] rounded-l-lg">ID</div>
+              <div className="block text-start px-6 border border-gray-100 dark:border-blue-900 dark:bg-blue-900 py-2 bg-gray-100 text-gray-800 dark:text-gray-100 w-[20%]">Name</div>
+              <div className="block text-start px-6 border border-gray-100 dark:border-blue-900 dark:bg-blue-900 py-2 bg-gray-100 text-gray-800 dark:text-gray-100 w-[20%]">Email</div>
+              <div className="block text-start px-6 border border-gray-100 dark:border-blue-900 dark:bg-blue-900 py-2 bg-gray-100 text-gray-800 dark:text-gray-100 w-[8%]">Role</div>
+              <div className="block text-start px-6 border border-gray-100 dark:border-blue-900 dark:bg-blue-900 py-2 bg-gray-100 text-gray-800 dark:text-gray-100 w-[16%]">Country</div>
+              <div className="block text-start px-6 border border-gray-100 dark:border-blue-900 dark:bg-blue-900 py-2 bg-gray-100 text-gray-800 dark:text-gray-100 w-[8%]">Age</div>
+              <div className='block text-center px-6 border border-gray-100 dark:border-blue-900 dark:bg-blue-900 py-2 bg-gray-100 text-gray-800 dark:text-gray-100 w-[8%] rounded-r-lg'>Actions</div>
             </div>
           </div>
           <div className="w-full pb-48">
             {users.map((user) => (
               <div key={user.id} id={user.id} className="flex flex-row w-full mb-2 border-gray-200 rounded-lg">
-                <div className="w-[20%] rounded-l-lg block px-0 border border-gray-100 font-normal bg-gray-50 text-gray-400">
+                <div className="w-[20%] rounded-l-lg block px-0 border-gray-100 dark:border-gray-700 font-normal bg-gray-50 dark:bg-gray-800 text-gray-500">
                   <input className="py-3 px-4 w-full outline-0" type="text" disabled value={user.id || ''} />
                 </div>
-                <div className={`w-[20%] block px-0 border border-gray-100 font-normal ${editing ? 'bg-white text-gray-600' : 'bg-gray-50 text-gray-400'}`}>
+                 <div className={`w-[20%] block px-0 border-gray-100 dark:border-gray-800 font-normal ${editing ? 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300' : 'bg-gray-50 dark:bg-gray-800 text-gray-500'}`}>
                   <input
                     className="py-3 px-4 w-full outline-0"
                     type="text"
@@ -232,7 +232,7 @@ export default function UsersPage() {
                     }}
                   />
                 </div>
-                <div className={`w-[20%] block px-0 border border-gray-100 font-normal ${editing ? 'bg-white text-gray-600' : 'bg-gray-50 text-gray-400'}`}>
+                <div className={`w-[20%] block px-0 border-gray-100 dark:border-gray-800 font-normal ${editing ? 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300' : 'bg-gray-50 dark:bg-gray-800 text-gray-500'}`}>
                   <input
                     className="py-3 px-4 w-full outline-0"
                     type="text"
@@ -245,7 +245,7 @@ export default function UsersPage() {
                     }}
                   />
                 </div>
-                <div className={`w-[8%] block px-0 border border-gray-100 font-normal ${editing ? 'bg-white text-gray-600' : 'bg-gray-50 text-gray-400'}`}>
+                <div className={`w-[8%] block px-0 border-gray-100 dark:border-gray-800 font-normal ${editing ? 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300' : 'bg-gray-50 dark:bg-gray-800 text-gray-500'}`}>
                   <select
                     value={user.role || 'user'}
                     disabled={!editing}
@@ -260,7 +260,7 @@ export default function UsersPage() {
                     <option value="admin">Admin</option>
                   </select>
                 </div>
-                <div className={`w-[16%] block px-0 border border-gray-100 font-normal ${editing ? 'bg-white text-gray-600' : 'bg-gray-50 text-gray-400'}`}>
+                <div className={`w-[16%] block px-0 border-gray-100 dark:border-gray-800 font-normal ${editing ? 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300' : 'bg-gray-50 dark:bg-gray-800 text-gray-500'}`}>
                   <input
                     className="py-3 px-4 w-full outline-0"
                     type="text"
@@ -273,7 +273,7 @@ export default function UsersPage() {
                     }}
                   />
                 </div>
-                <div className={`w-[8%] block px-0 border rounded-r-lg border-gray-100 font-normal ${editing ? 'bg-white text-gray-600' : 'bg-gray-50 text-gray-400'}`}>
+                <div className={`w-[8%] block px-0 rounded-r-lg border-gray-100 dark:border-gray-800 font-normal ${editing ? 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300' : 'bg-gray-50 dark:bg-gray-800 text-gray-500'}`}>
                   <input
                     className="py-3 px-4 w-full outline-0"
                     type="number"
@@ -289,7 +289,7 @@ export default function UsersPage() {
                 </div>
                 <div className={`w-[8%] flex items-center justify-center px-0 font-normal`}>
                     <span
-                        className={`bg-red-100 px-3 py-1 ${editing ? 'text-red-600' : 'text-red-300'} rounded-lg cursor-pointer`}
+                        className={`bg-red-500/10 dark:bg-red-500/30 px-3 py-1 ${editing ? 'text-red-600 dark:text-red-400' : 'text-red-300 dark:text-red-500/35'} rounded-lg cursor-pointer`}
                         onClick={async () => {
                             if (!editing) return;
                             const { error } = await supabase.from('users').delete().eq('id', user.id);

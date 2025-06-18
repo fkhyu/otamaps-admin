@@ -529,21 +529,21 @@ function EventsPageContent() {
 
     return (
         <div className='flex h-screen'>
-            <div className='w-1/5 h-full flex flex-col items-center bg-gray-100 p-4'>
-                <div className='flex flex-row justify-between items-center w-full mb-4 pb-3 border-b border-gray-300'>
+            <div className='w-1/5 h-full flex flex-col items-center bg-gray-100 dark:bg-gray-900 p-4'>
+                <div className='flex flex-row justify-between items-center w-full mb-4 pb-3 border-b border-gray-300 dark:border-gray-700'>
                     <div className='flex flex-row itens-center gap-3'>
                         <button
-                            className='w-10 h-10 flex items-center justify-center bg-gray-200 text-gray-600 text-2xl rounded-lg'
+                            className='w-10 h-10 flex items-center justify-center bg-gray-500/10 dark:bg-gray-600 text-gray-600 text-2xl rounded-lg'
                             onClick={() => {
                             window.location.href = '/';
                             }}
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#000"><path d="M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z"/></svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#000" className='dark:fill-white'><path d="M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z"/></svg>
                         </button>
                         <h1 className='text-2xl font-bold my-auto'>Events</h1>
                     </div>
                     <button
-                        className="w-10 h-10 bg-blue-100 text-blue-600 text-2xl rounded-lg"
+                        className="w-10 h-10 bg-blue-500/10 dark:bg-blue-500/35 text-blue-600 dark:text-blue-400 text-2xl rounded-lg"
                         onClick={() => window.location.href='/editor'}
                     >
                         +
@@ -557,19 +557,19 @@ function EventsPageContent() {
                         {events.map(event => (
                             <div
                                 key={event.id}
-                                className={`rounded-lg px-4 py-2 hover:bg-gray-200 hover:cursor-pointer ${
-                                    selectedEvent?.id === event.id ? 'bg-gray-200' : ''
+                                className={`rounded-lg px-4 py-2 hover:bg-gray-200 dark:hover:bg-gray-800 hover:cursor-pointer ${
+                                    selectedEvent?.id === event.id ? 'bg-gray-200 dark:bg-gray-800' : ''
                                 }`}
                                 onClick={() => {setSelectedEvent(event);}}
                             >
-                                <h2 className='text-md text-gray-700 font-medium'>{event.name}</h2>
+                                <h2 className='text-md text-gray-700 dark:text-gray-400 font-medium'>{event.name}</h2>
                             </div>
                         ))}
                     </div>
                 )}
 
                 <div
-                    className='mt-auto w-full text-center text-gray-500 text-sm py-2 border-t border-gray-300 hover:cursor-pointer'
+                    className='mt-auto w-full text-center text-gray-500 text-sm py-2 border-t border-gray-300 dark:border-gray-700 hover:cursor-pointer'
                     onClick={() => window.location.href = '/'}
                 >
                     Back to Dashboard
@@ -578,8 +578,8 @@ function EventsPageContent() {
 
             <div className='w-4/5 flex flex-col h-full p-5'>
                 {!selectedEvent && (
-                    <div className="flex-1 flex items-center justify-center bg-white">
-                        <p className='text-gray-500'>Select an event to view details</p>
+                    <div className="flex-1 flex items-center justify-center">
+                        <p className='opacity-60'>Select an event to view details</p>
                     </div>
                 )}
                 {selectedEvent && (
@@ -595,13 +595,13 @@ function EventsPageContent() {
                 <div className='grid grid-cols-2 gap-sta gap-4 w-full'>
                     <div className='flex flex-col gap-6'>
                         <div className='flex flex-col gap-2'>
-                            <label htmlFor="" className='block mb-2 text-sm font-medium text-gray-900'>
+                            <label htmlFor="" className='block mb-2 text-sm font-medium text-gray-900 dark:text-gray-300'>
                                 Name
                             </label>
                             <input
                                 type="text"
                                 value={selectedEvent?.name || ''}
-                                className='px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 ring-blue-500 outline-0'
+                                className='px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 focus:ring-2 ring-blue-500 outline-0'
                                 onChange={(e) => {
                                     if (selectedEvent) {
                                         setSelectedEvent({
@@ -613,12 +613,12 @@ function EventsPageContent() {
                             />
                         </div>
                         <div className='flex flex-col gap-2'>
-                            <label htmlFor="" className='block mb-2 text-sm font-medium text-gray-900'>
+                            <label htmlFor="" className='block mb-2 text-sm font-medium text-gray-900 dark:text-gray-300'>
                                 Start time
                             </label>
                             <input
                                 type="datetime-local"
-                                className="px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 ring-blue-500 outline-0"
+                                className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 focus:ring-2 ring-blue-500 outline-0"
                                 value={selectedEvent?.start_time ? new Date(selectedEvent.start_time).toISOString().slice(0, 16) : ''}
                                 onChange={(e) => {
                                     if (selectedEvent) {
@@ -631,12 +631,12 @@ function EventsPageContent() {
                             />
                         </div>
                         <div className='flex flex-col gap-2'>
-                            <label htmlFor="" className='block mb-2 text-sm font-medium text-gray-900'>
+                            <label htmlFor="" className='block mb-2 text-sm font-medium text-gray-900 dark:text-gray-300'>
                                 End time
                             </label>
                             <input
                                 type="datetime-local"
-                                className="px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 ring-blue-500 ourline-0"
+                                className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 focus:ring-2 ring-blue-500 ourline-0"
                                 value={selectedEvent?.end_time ? new Date(selectedEvent.end_time).toISOString().slice(0, 16) : ''}
                                 onChange={(e) => {
                                     if (selectedEvent) {
@@ -649,7 +649,7 @@ function EventsPageContent() {
                             />
                         </div>
                         <div className="flex flex-col gap-2">
-                            <label htmlFor="" className='mb-2 text-sm font-medium text-gray-900'>
+                            <label htmlFor="" className='mb-2 text-sm font-medium text-gray-900 dark:text-gray-300'>
                                 Participants
                             </label>
 
@@ -657,7 +657,7 @@ function EventsPageContent() {
                                 <div className='flex flex-wrap gap-2 mb-2'>
                                     {selectedParticipants.map((participant, index) => (
                                         <span
-                                            className=' bg-blue-100 text-blue-800 px-3 py-1 rounded-full flex items-center gap-2'
+                                            className=' bg-blue-500/10 dark:bg-blue-500/30 text-blue-800 dark:text-blue-300 px-3 py-1 rounded-full flex items-center gap-2'
                                             key={index}
                                         >
                                             {participant.name || participant.email}
@@ -680,12 +680,12 @@ function EventsPageContent() {
                                     value={participantInput}
                                     onChange={(e) => setParticipantInput(e.target.value)}
                                     onFocus={() => setShowDropdown(true)}
-                                    className='w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 ring-blue-500 outline-0'
+                                    className='w-full px-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 ring-blue-500 outline-0'
                                     placeholder='Add participants by name or email...'
                                 />
 
                                 {showDropdown && (
-                                    <div className='absolute z-10 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-60 overflow-y-auto'>
+                                    <div className='absolute z-10 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg mt-1 max-h-60 overflow-y-auto'>
                                         {filteredUsers.map((user) => (
                                             <div
                                                 key={user.id}
@@ -705,12 +705,12 @@ function EventsPageContent() {
                     </div>
                     <div className='flex flex-col gap-6'>
                         <div className='flex flex-col gap-2'>
-                            <label htmlFor="" className="block mb-2 text-sm font-medium text-gray-900">
+                            <label htmlFor="" className="block mb-2 text-sm font-medium text-gray-900 dark:text-gray-300">
                                 Description
                             </label>
                             <textarea
                                 value={selectedEvent?.description || ''}
-                                className="px-4 py-2 border border-gray-200 focus:ring-2 ring-blue-500 rounded-lg min-h-[144px] resize-none"
+                                className="px-4 py-2 border border-gray-200 dark:border-gray-700 focus:ring-2 ring-blue-500 rounded-lg min-h-[144px] resize-none"
                                 onChange={(e) => {
                                     if (selectedEvent) {
                                         setSelectedEvent({
@@ -722,13 +722,13 @@ function EventsPageContent() {
                             />
                         </div>
                         <div className="flex flex-col gap-2">
-                            <label htmlFor="" className="mb-2 text-sm font-medium text-gray-900">
+                            <label htmlFor="" className="mb-2 text-sm font-medium text-gray-900 dark:text-gray-300">
                                 POI ID
                             </label>
                             <input
                                 type="text"
                                 value={selectedEvent.poi_id || ''}
-                                className="px-4 py-2 border bg-gray-100 text-gray-500 border-gray-200 rounded-lg focus:ring-2 ring-blue-500 outline-0"
+                                className="px-4 py-2 border bg-gray-100 dark:bg-gray-800 text-gray-500 border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 ring-blue-500 outline-0"
                                 onChange={() => {}}
                                 readOnly
                                 disabled

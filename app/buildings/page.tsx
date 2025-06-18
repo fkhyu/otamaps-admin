@@ -343,21 +343,21 @@ export default function BuildingsPage() {
 
   return (
     <div className="flex h-screen">
-      <div className="w-1/5 h-full flex flex-col items-center bg-gray-100 p-4">
-        <div className='flex flex-row justify-between items-center w-full mb-4 pb-3 border-b border-gray-300'>
+      <div className="w-1/5 h-full flex flex-col items-center bg-gray-100 dark:bg-gray-900 p-4">
+        <div className='flex flex-row justify-between items-center w-full mb-4 pb-3 border-b border-gray-300 dark:border-gray-700'>
           <div className='flex flex-row itens-center gap-3'>
               <button
-                  className='w-10 h-10 flex items-center justify-center bg-gray-200 text-gray-600 text-2xl rounded-lg'
+                  className='w-10 h-10 flex items-center justify-center bg-gray-500/10 dark:bg-gray-600 text-gray-600 text-2xl rounded-lg'
                   onClick={() => {
                   window.location.href = '/';
                   }}
               >
-                  <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#000"><path d="M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#000" className='dark:fill-white'><path d="M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z"/></svg>
               </button>
               <h1 className='text-2xl font-bold my-auto'>Buildings</h1>
           </div>
           <button
-            className='w-10 h-10 bg-blue-100 text-blue-600 text-2xl rounded-lg'
+            className='w-10 h-10 bg-blue-500/10 dark:bg-blue-500/35 text-blue-600 dark:text-blue-400 text-2xl rounded-lg'
             onClick={() => setIsModalOpen(true)}
           >
             +
@@ -371,19 +371,19 @@ export default function BuildingsPage() {
             {buildings.map((building) => (
               <div
                 key={building.id}
-                className={`rounded-xl px-4 py-2 hover:bg-gray-200 hover:cursor-pointer ${
-                  selectedBuilding?.id === building.id ? 'bg-gray-200' : ''
+                className={`rounded-xl px-4 py-2 hover:bg-gray-200 dark:hover:bg-gray-800 hover:cursor-pointer ${
+                  selectedBuilding?.id === building.id ? 'bg-gray-200 dark:bg-gray-800' : ''
                 }`}
                 onClick={() => setSelectedBuilding(building)}
               >
-                <h2 className="text-md text-gray-700 font-medium">{building.name}</h2>
+                <h2 className="text-md text-gray-700 dark:text-gray-400 font-medium">{building.name}</h2>
               </div>
             ))}
           </div>
         )}
 
         <div 
-          className='mt-auto w-full text-center text-gray-500 text-sm py-2 border-t border-gray-300 hover:cursor-pointer'
+          className='mt-auto w-full text-center text-gray-500 text-sm py-2 border-t border-gray-300 dark:border-gray-700 hover:cursor-pointer'
           onClick={() => window.location.href = '/'}
         >
           Back to Dashboard
@@ -392,12 +392,12 @@ export default function BuildingsPage() {
 
       <div className="w-4/5 flex flex-col h-full">
         {!selectedBuilding && (
-          <div className="flex-1 flex items-center justify-center bg-white">
-            <p className="text-gray-500">Select a building to view details</p>
+          <div className="flex-1 flex items-center justify-center">
+            <p className="opacity-60">Select a building to view details</p>
           </div>
         )}
         {selectedBuilding && (
-          <div className="w-full flex-1 p-4 gap-6 flex flex-col items-start bg-white overflow-y-auto">
+          <div className="w-full flex-1 p-4 gap-6 flex flex-col items-start overflow-y-auto">
             {selectedBuilding.imageUrl && (
               <div className='flex flex-row w-full gap-6'>
                 <div className="w-full rounded-xl" style={{ height: 400 }}>
@@ -435,8 +435,8 @@ export default function BuildingsPage() {
                   <div ref={setMapContainer} className="w-full h-full rounded-xl" />
                 </div>
                 <div className="w-full h-full relative">
-                  <div className="w-full h-full rounded-xl bg-gray-200 flex items-center justify-center">
-                    <p className="text-gray-500">No image available</p>
+                  <div className="w-full h-full rounded-xl bg-gray-200 dark:bg-gray-600 flex items-center justify-center">
+                    <p className="text-gray-500 dark:text-gray-400">No image available</p>
                   </div>
                 </div>
               </div>
@@ -445,43 +445,44 @@ export default function BuildingsPage() {
             <div className="grid grid-cols-2 grid-sta gap-4 w-full">
               <div className="flex flex-col gap-6">
                 <div className="flex flex-col gap-1">
-                  <label htmlFor="buildingName" className="block mb-2 text-sm font-medium text-gray-900">
+                  <label htmlFor="buildingName" className="block mb-2 text-sm font-medium text-gray-900 dark:text-gray-300">
                     Name
                   </label>
                   <input
                     id="buildingName"
                     type="text"
                     value={selectedBuilding.name}
-                    className="px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 ring-blue-500 outline-0"
+                    className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 focus:ring-2 ring-blue-500 outline-0"
                     onChange={(e) => setSelectedBuilding({ ...selectedBuilding, name: e.target.value })}
                   />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label htmlFor="buildingAddress" className="block mb-2 text-sm font-medium text-gray-900">
+                  <label htmlFor="buildingAddress" className="block mb-2 text-sm font-medium text-gray-900 dark:text-gray-300">
                     Address
                   </label>
                   <input
                     id="buildingAddress"
                     type="text"
                     value={selectedBuilding.address || ''}
-                    className="px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 ring-blue-500 outline-0"
+                    className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 focus:ring-2 ring-blue-500 outline-0"
                     onChange={(e) => setSelectedBuilding({ ...selectedBuilding, address: e.target.value })}
                   />
                 </div>
                 <div className='flex flex-col gap-1'>
-                  <label htmlFor="uuid" className='block mb-2 test-sm font-medium text-gray-900'>
+                  <label htmlFor="uuid" className='block mb-2 test-sm font-medium text-gray-900 dark:text-gray-300'>
                     UUID
                   </label>
                   <input
                     type="text"
                     id='uuid'
                     value={selectedBuilding.id.toString()}
-                    className="px-4 py-2 w-full rounded-lg border border-gray-200 bg-gray-100 text-gray-500 outline-0 cursor-not-allowed"
+                    className="px-4 py-2 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 text-gray-500 outline-0 cursor-not-allowed"
                     onChange={() => {}}
                     disabled
                     readOnly
                   />
                 </div>
+
                 {/* move buildig on map button */}
                 <div>
                   <button
@@ -505,7 +506,7 @@ export default function BuildingsPage() {
               </div>
               <div className="flex flex-col gap-6">
                 <div className="flex flex-col gap-1">
-                  <label htmlFor="buildingLat" className="block mb-2 text-sm font-medium text-gray-900">
+                  <label htmlFor="buildingLat" className="block mb-2 text-sm font-medium text-gray-900 dark:text-gray-300">
                     Latitude
                   </label>
                   <input
@@ -513,12 +514,12 @@ export default function BuildingsPage() {
                     type="number"
                     step="0.0001"
                     value={selectedBuilding.lat}
-                    className="px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 ring-blue-500 outline-0"
+                    className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 focus:ring-2 ring-blue-500 outline-0"
                     onChange={(e) => setSelectedBuilding({ ...selectedBuilding, lat: parseFloat(e.target.value) })}
                   />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label htmlFor="buildingLon" className="block mb-2 text-sm font-medium text-gray-900">
+                  <label htmlFor="buildingLon" className="block mb-2 text-sm font-medium text-gray-900 dark:text-gray-300">
                     Longitude
                   </label>
                   <input
@@ -526,19 +527,19 @@ export default function BuildingsPage() {
                     type="number"
                     step="0.0001"
                     value={selectedBuilding.lon}
-                    className="px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 ring-blue-500 outline-0"
+                    className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 focus:ring-2 ring-blue-500 outline-0"
                     onChange={(e) => setSelectedBuilding({ ...selectedBuilding, lon: parseFloat(e.target.value) })}
                   />
                 </div>
                 <div className='flex flex-col gap-1'>
-                  <label htmlFor="imageUrl" className='bloock mb-2 test-sm font-medium text-gray-900'>
+                  <label htmlFor="imageUrl" className='bloock mb-2 test-sm font-medium text-gray-900 dark:text-gray-300'>
                     Image URL
                   </label>
                   <input
                     type="url" 
                     id="imageUrl"
                     value={selectedBuilding.imageUrl || ''}
-                    className="px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 ring-blue-500 outline-0"
+                    className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 focus:ring-2 ring-blue-500 outline-0"
                     onChange={(e) => setSelectedBuilding({ ...selectedBuilding, imageUrl: e.target.value })}
                   />
                 </div>
