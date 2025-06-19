@@ -101,6 +101,42 @@ export default function ModerationPage() {
         };
     })
 
+    const approveCheckin = async (checkinId: string) => {
+        try {
+            const { error } = await supabase
+                .from('check_ins')
+                .update({ checked: true })
+                .eq('id', checkinId);
+
+            if (error) throw error;
+
+            setCheckins((prev) => prev.filter(checkin => checkin.id !== checkinId));
+            setCheckinIndex((prev) => (prev === 0 ? 0 : prev - 1));
+            console.log('Check-in approved:', checkinId);
+        } catch (error) {
+            console.error('Error approving check-in:', error);
+            setError('Failed to approve check-in');
+        }
+    }
+
+    const rejectCheckin = async (checkinId: string) => {
+        try {
+            const { error } = await supabase
+                .from('check_ins')
+                .delete()
+                .eq('id', checkinId);
+
+            if (error) throw error;
+
+            setCheckins((prev) => prev.filter(checkin => checkin.id !== checkinId));
+            setCheckinIndex((prev) => (prev === 0 ? 0 : prev - 1));
+            console.log('Check-in rejected:', checkinId);
+        } catch (error) {
+            console.error('Error rejecting check-in:', error);
+            setError('Failed to reject check-in');
+        }
+    }
+
     if (loading) {
         return <div className="w-full h-[100vh] flex justify-center items-center">Loading...</div>;
     }
@@ -111,6 +147,14 @@ export default function ModerationPage() {
 
     return (
         <div className=" w-full flex flex-col items-center justify-center gap-6">
+            <button className='absolute top-4 left-4 pl-2 pr-4 cursor-pointer py-1 bg-gray-500/20 rounded-lg flex flex-row items-center'
+                onClick={() => {
+                    window.location.href='/'
+                }}
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#000" className='dark:fill-white'><path d="M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z"/></svg>
+                Dashboard
+            </button>
             {checkins.length === 0 ? (
                 <div>No check-ins to check</div>
             ) : (
@@ -157,7 +201,14 @@ export default function ModerationPage() {
                                                     {places.find(p => p.id === checkins[checkinIndex]?.thingy_id)?.title || 'Unknown place'}
                                                 </p>
                                                 <p className='text-orange-200 px-3 py-1 text-sm rounded-lg bg-orange-500/30 backdrop-blur-md'>
-                                                    {new Date(checkins[checkinIndex].created_at).toLocaleString()}
+                                                    {new Date(checkins[checkinIndex].created_at).toLocaleString('en-GB', {
+                                                        day: '2-digit',
+                                                        month: 'short',
+                                                        year: 'numeric',
+                                                        hour: '2-digit',
+                                                        minute: '2-digit',
+                                                        hour12: false
+                                                    }).replace(',', '')}
                                                 </p>
                                             </div>
                                             <p className='text-gray-100'>{checkins[checkinIndex].caption || 'No description'}</p>
@@ -180,10 +231,24 @@ export default function ModerationPage() {
                         </div>
                     </div>
                     <div className='flex flex-row w-[30%]'>
-                        <button className='bg-green-500/15 text-green-600 hover:bg-green-500 hover:text-white px-4 py-2 font-semibold rounded-full w-1/2'>
+                        <button
+                            className='bg-green-500/15 text-green-600 hover:bg-green-500 hover:text-white px-4 py-2 font-semibold rounded-full w-1/2'
+                            onClick={() => {
+                                if (checkins.length === 0) return;
+                                const checkin = checkins[checkinIndex];
+                                approveCheckin(checkin.id);
+                            }}
+                        >
                             Approve
                         </button>
-                        <button className='ml-2 bg-red-500/15 text-red-600 hover:bg-red-500 hover:text-white px-4 py-2 font-semibold rounded-full w-1/2'>
+                        <button
+                            className='ml-2 bg-red-500/15 text-red-600 hover:bg-red-500 hover:text-white px-4 py-2 font-semibold rounded-full w-1/2'
+                            onClick={() => {
+                                if (checkins.length === 0) return;
+                                const checkin = checkins[checkinIndex];
+                                rejectCheckin(checkin.id);
+                            }}
+                        >
                             Reject
                         </button>
                     </div>  
