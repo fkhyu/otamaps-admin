@@ -147,7 +147,7 @@ export default function ModerationPage() {
 
     return (
         <div className=" w-full flex flex-col items-center justify-center gap-6">
-            <button className='absolute top-4 left-4 pl-2 pr-4 cursor-pointer py-1 bg-gray-500/20 rounded-lg flex flex-row items-center'
+            <button className='absolute top-4 left-4 pl-2 pr-4 cursor-pointer py-1 bg-gray-500/20 dark:bg-white/20 rounded-lg flex flex-row items-center'
                 onClick={() => {
                     window.location.href='/'
                 }}
@@ -161,7 +161,7 @@ export default function ModerationPage() {
                 <div className='h-screen py-24 w-full flex flex-col items-center justify-center gap-6'>
                     <div>
                         <h1 className='text-3xl font-semibold'>
-                            Check-in by <span className='text-orange-600'>
+                            Check-in by <span className='text-orange-500 dark:text-orange-400'>
                                 {users.find(u => u.id === checkins[checkinIndex]?.poster_id)?.name || 'Unknown user'}
                             </span>
                         </h1>
@@ -169,7 +169,7 @@ export default function ModerationPage() {
                     <div className='w-[60%] rounded-3xl relative'>
                         <div className='w-full h-fit flex flex-row items-center justify-between gap-24'>
                             <button
-                                className='p-3 bg-gray-100 rounded-full flex items-center justify-center'
+                                className='p-3 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center'
                                 onClick={() => {
                                     if (checkins.length === 0) return;
                                     setCheckinIndex((prev) =>
@@ -178,7 +178,7 @@ export default function ModerationPage() {
                                     console.log(checkinIndex, checkins.length)
                                 }}
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" className='fill-gray-600'><path d="M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z"/></svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" className='fill-gray-600 dark:fill-gray-400'><path d="M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z"/></svg>
                             </button>
                             <div className='relative min-w-[300px] min-h-[300px] flex items-center justify-center'>
                                 {imageLoading && (
@@ -217,7 +217,7 @@ export default function ModerationPage() {
                                 )}
                             </div>
                             <button
-                                className='p-3 bg-gray-100 rounded-full flex items-center justify-center'
+                                className='p-3 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center'
                                 onClick={() => {
                                     if (checkins.length === 0) return;
                                     setCheckinIndex((prev) =>
@@ -226,13 +226,13 @@ export default function ModerationPage() {
                                     console.log(checkinIndex, checkins.length)
                                 }}
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" className='fill-gray-600 pl-1'><path d="M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z"/></svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" className='fill-gray-600 dark:fill-gray-400 pl-1'><path d="M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z"/></svg>
                             </button>
                         </div>
                     </div>
                     <div className='flex flex-row w-[30%]'>
                         <button
-                            className='bg-green-500/15 text-green-600 hover:bg-green-500 hover:text-white px-4 py-2 font-semibold rounded-full w-1/2'
+                            className='bg-green-500/15 dark:bg-green-400/30 dark:text-green-400 text-green-600 hover:bg-green-500 hover:text-white px-4 py-2 font-semibold rounded-full w-1/2'
                             onClick={() => {
                                 if (checkins.length === 0) return;
                                 const checkin = checkins[checkinIndex];
@@ -242,7 +242,7 @@ export default function ModerationPage() {
                             Approve
                         </button>
                         <button
-                            className='ml-2 bg-red-500/15 text-red-600 hover:bg-red-500 hover:text-white px-4 py-2 font-semibold rounded-full w-1/2'
+                            className='ml-2 bg-red-500/15 dark:bg-red-400/30 dark:text-red-400 text-red-600 hover:bg-red-500 hover:text-white px-4 py-2 font-semibold rounded-full w-1/2'
                             onClick={() => {
                                 if (checkins.length === 0) return;
                                 const checkin = checkins[checkinIndex];
