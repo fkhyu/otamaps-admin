@@ -15,4 +15,8 @@ export const navLinks = {
         label: "Users",
         link: "/users"
     },
+    moderation: {
+        label: "Moderation",
+        link: "/moderation"
+    }
 }
