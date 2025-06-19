@@ -156,7 +156,7 @@ export default function ModerationPage() {
                 Dashboard
             </button>
             {checkins.length === 0 ? (
-                <div>No check-ins to check</div>
+                <div className='w-full h-screen flex items-center justify-center text-2xl font-semibold'>No check-ins to check</div>
             ) : (
                 <div className='h-screen py-24 w-full flex flex-col items-center justify-center gap-6'>
                     <div>
