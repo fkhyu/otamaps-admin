@@ -165,6 +165,26 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               if (error) {
                 console.error('Error deleting room:', error);
               }
+              // delete all walls that have a 'for' value same as deleted room_id
+              const { error: wallError } = await supabase
+                .from('features')
+                .delete()
+                .eq('for', selectedFeatureId);
+              if (wallError) {
+                console.error('Error deleting walls:', wallError);
+              }
+              // update wall features on map
+              console.log(wallFeatures.features.find((f) => f.properties?.for === selectedFeatureId));
+              const { data } = await supabase
+                .from('features')
+                .select('*')
+
+              if (data) {
+                setWallFeatures({
+                  type: 'FeatureCollection',
+                  features: data as Feature[]
+                });
+              }
             }}
             className="mt-5 mb-8 w-full bg-red-600 text-white p-2 rounded-md hover:bg-red-700 transition font-medium"
           >

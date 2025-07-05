@@ -8,6 +8,7 @@ export interface WallFeature extends Feature<Polygon> {
     width: number;
     height: number;
     id?: string;
+    roomId?: string;
   };
 }
 
@@ -39,6 +40,7 @@ export interface RoomFeature extends Feature<Polygon> {
     avEquipment: string[];
     purpose: string;
     geometry?: Polygon;
+    wallified?: boolean;
   };
 }
 

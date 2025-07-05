@@ -64,6 +64,8 @@ const Editor: React.FC = () => {
         expandedLayers={expandedLayers}
         toggleLayer={(layer) => setExpandedLayers((prev) => ({ ...prev, [layer]: !prev[layer] }))}
         handleLayerSelect={handleLayerSelect}
+        setWallFeatures={setWallFeatures}
+        setRoomFeatures={setRoomFeatures}
       />
       <div className="flex-1">
         <div ref={mapContainer} className="w-full h-full" />

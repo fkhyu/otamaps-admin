@@ -334,6 +334,7 @@ useEffect(() => {
             type: 'wall',
             width: item.width || DEFAULT_WALL_WIDTH,
             height: WALL_HEIGHT,
+            for: item.for || null,
             },
         })),
         });
@@ -353,16 +354,17 @@ useEffect(() => {
             type: 'Feature',
             geometry: item.geometry,
             properties: {
-            id: item.id,
-            type: 'room',
-            name: item.title,
-            number: item.room_number,
-            color: item.color || '#ff0000',
-            bookable: item.bookable,
-            capacity: item.seats,
-            avEquipment: item.avEquipment || [],
-            purpose: item.description,
-            icon: item.icon || '🏢',
+                id: item.id,
+                type: 'room',
+                name: item.title,
+                number: item.room_number,
+                color: item.color || '#ff0000',
+                bookable: item.bookable,
+                capacity: item.seats,
+                avEquipment: item.avEquipment || [],
+                purpose: item.description,
+                icon: item.icon || '🏢',
+                wallified: item.wallified || false,
             },
         })),
         });
@@ -1004,6 +1006,45 @@ const handleDrawCreate = useCallback(async (e: any) => {
         features: [...prev.features, roomFeature],
     }));
 
+    // automatically draw walls
+    // const coords = newFeature.geometry.coordinates[0];
+    // if (coords.length > 3) {
+    //     const line = turf.lineString(coords);
+    //     const cleaned = turf.truncate(line, { precision: 10 });
+    //     const buffered = turf.buffer(cleaned, Math.max(0.1, wallWidth / 2), { units: 'meters' });
+
+    //     if (buffered && buffered.geometry && buffered.geometry.type === 'Polygon') {
+    //         const wallFeature: WallFeature = {
+    //             type: 'Feature',
+    //             id: generateUniqueId(),
+    //             geometry: buffered.geometry as Polygon,
+    //             properties: {
+    //                 type: 'wall',
+    //                 width: wallWidth,
+    //                 height: WALL_HEIGHT,
+    //             },
+    //         };
+
+    //         setWallFeatures(prev => ({
+    //             ...prev,
+    //             features: [...prev.features, wallFeature]
+    //         }));
+
+    //         // Save to Supabase
+    //         await supabase
+    //             .from('features')
+    //             .insert([
+    //                 {
+    //                     id: wallFeature.id,
+    //                     geometry: wallFeature.geometry,
+    //                     type: 'wall',
+    //                     width: wallWidth,
+    //                     height: WALL_HEIGHT,
+    //                 },
+    //             ]);
+    //     }
+    // }
+
     const { error } = await supabase
         .from('rooms')
         .insert({
@@ -1324,7 +1365,24 @@ const handleLayerSelect = useCallback((feature: Feature) => {
     setSelectedFurniture(null);
     setSelectedRoom(null);
     }
-}, [furnitureFeatures, setRoomMarkers, setSelectedRoom]);
+
+    if (
+        feature.geometry &&
+        'coordinates' in feature.geometry &&
+        Array.isArray((feature.geometry as any).coordinates)
+    ) {
+        console.log('Feature coordinates:', (feature.geometry as any).coordinates[0][0] as [number, number]);
+        map.current?.flyTo({
+            center: (feature.geometry as any).coordinates[0][0] as [number, number],
+            zoom: 18,
+            essential: true,
+            duration: 3000,
+        });
+        
+    } else {
+        console.error('Feature geometry does not have coordinates:', feature.geometry);
+    }
+}, [furnitureFeatures, setRoomMarkers, setSelectedRoom, setSelectedFeatureId, setSelectedFurniture, setSelectedRoom, map]);
 
 const handleNativeDrop = useCallback(async (e: DragEvent) => {
     e.preventDefault();

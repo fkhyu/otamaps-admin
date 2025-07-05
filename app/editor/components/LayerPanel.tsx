@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { FeatureCollection, Feature } from 'geojson';
 import { WallFeature, RoomFeature, FurnitureFeature } from '../lib/types';
+import autofillWalls from '../lib/autofillWalls';
 
 interface LayerPanelProps {
   wallFeatures: FeatureCollection;
@@ -13,6 +14,8 @@ interface LayerPanelProps {
   expandedLayers: { [key: string]: boolean };
   toggleLayer: (layer: string) => void;
   handleLayerSelect: (feature: Feature) => void;
+  setWallFeatures: React.Dispatch<React.SetStateAction<FeatureCollection>>;
+  setRoomFeatures: React.Dispatch<React.SetStateAction<FeatureCollection>>;
 }
 
 export const LayerPanel: React.FC<LayerPanelProps> = ({
@@ -24,6 +27,8 @@ export const LayerPanel: React.FC<LayerPanelProps> = ({
   expandedLayers,
   toggleLayer,
   handleLayerSelect,
+  setWallFeatures,
+  setRoomFeatures,
 }) => {
   const [buttonLabel, setButtonLabel] = useState('Go to SF');
 
@@ -89,12 +94,29 @@ export const LayerPanel: React.FC<LayerPanelProps> = ({
               roomFeatures.features.map((feature) => (
                 <div
                   key={feature.id}
-                  className={`p-2 text-sm cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800 rounded ${
+                  className={`p-2 text-sm cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800 rounded flex flex-row justify-between items-center ${
                     selectedFeatureId === feature.id ? 'bg-blue-100 dark:bg-blue-950' : ''
                   }`}
                   onClick={() => handleLayerSelect(feature)}
                 >
                   {feature.properties?.name || `Room ${roomFeatures.features.indexOf(feature) + 1}`}
+                  { !feature.properties?.wallified && (
+                    <button
+                      onClick={() => {
+                        if (!feature.properties?.wallified) {
+                          autofillWalls(
+                            feature as RoomFeature,
+                            feature.properties?.width || 0.2,
+                            setWallFeatures,
+                            setRoomFeatures
+                          );
+                        }
+                      }}
+                      className="text-sm bg-blue-500/10 px-3 py-1 rounded-lg text-blue-600"
+                    >
+                      Wallify
+                    </button>
+                  )}
                 </div>
               ))
             )}
