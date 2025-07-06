@@ -34,6 +34,7 @@ export default function Home() {
             setUser(session.user);
           } else {
             setUser(data || session.user);
+            console.log("User data fetched:", data);
           }
           setLoading(false);
         });
@@ -60,20 +61,24 @@ export default function Home() {
   }
 
   if (!session) {
-    return null; // Will redirect to login
+    return null;
   }
 
   const greeting = new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening";
 
   return (
     <div className="flex h-screen w-full items-center justify-center flex-col">
-      <h1 className="text-4xl font-semibold">{greeting}, <span className="text-blue-500">{user.name || 'guest'}</span>!</h1>
+      <h1 className="text-4xl font-semibold">{greeting}, <span style={{ color: user?.color || '#3b82f6' }}>{user.name || 'guest'}</span>!</h1>
       <div className="flex flex-col items-center justify-center mt-12 gap-2">
         {Object.values(navLinks).map((link) => (
           <a
             key={link.label}
             href={link.link}
-            className="text-blue-500 bg-blue-500/10 w-36 py-2 flex items-center justify-center rounded-lg border-none p-0 cursor-pointer transition-all duration-300 ease-in-out hover:scale-105 hover:shadow-lg shadow-blue-900/10"
+            className={`w-36 py-2 flex items-center justify-center rounded-lg border-none p-0 cursor-pointer transition-all duration-300 ease-in-out hover:scale-105 hover:shadow-lg shadow-${user?.color ? `[${user.color}]` : 'blue-500'}`}
+            style={{
+              color: user?.color || '#3b82f6',
+              backgroundColor: user?.color ? `${user.color}1a` : 'rgba(59, 130, 246, 0.1)'
+            }}
           >
             {link.label}
           </a>

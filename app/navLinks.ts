@@ -3,20 +3,20 @@ export const navLinks = {
         label: "Map Editor",
         link: "/editor"
     },
-    buildings: {
-        label: "Buildings",
-        link: "/buildings"
-    },
-    events: {
-        label: "Events",
-        link: "/events"
-    },
-    users: {
-        label: "Users",
-        link: "/users"
-    },
-    moderation: {
-        label: "Moderation",
-        link: "/moderation"
-    }
+    // buildings: {
+    //     label: "Buildings",
+    //     link: "/buildings"
+    // },
+    // events: {
+    //     label: "Events",
+    //     link: "/events"
+    // },
+    // users: {
+    //     label: "Users",
+    //     link: "/users"
+    // },
+    // moderation: {
+    //     label: "Moderation",
+    //     link: "/moderation"
+    // }
 }

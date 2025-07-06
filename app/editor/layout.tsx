@@ -26,10 +26,19 @@ export default async function EditorLayout({
     data: { session },
   } = await supabase.auth.getSession();
 
+  // console.log("EditorLayout session:", session);
+
   return (
     <div className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-      {session ? children : <div className="flex h-screen w-full items-center justify-center flex-col">Access Denied: Please log in <button onClick={redirect('/login')}>Log in</button></div>}
-      {/* {children} */}
+      {/* {session ? children : (
+        <div className="flex h-screen w-full items-center justify-center flex-col text-red-400">
+          Access Denied: Please log in
+          <form action="/login" method="get">
+            <button type="submit" className="cursor-pointer px-4 py-2 bg-blue-500/10 mt-4 rounded-lg text-blue-400">Log in</button>
+          </form>
+        </div>
+      )} */}
+      {children}
     </div>
   );
 }
