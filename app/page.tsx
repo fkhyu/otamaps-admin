@@ -1,30 +1,68 @@
-import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+'use client';
+
+import { supabase } from "@/lib/supabaseClient";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import LogoutForm from "./components/LogoutForm";
 import { navLinks } from "./navLinks";
 
-export default async function Home() {
-  const supabase = createServerComponentClient({ cookies });
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+export default function Home() {
+  const [session, setSession] = useState<any>(null);
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+
+  useEffect(() => {
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session }, error: sessionError }) => {
+      if (!session || sessionError) {
+        router.push("/login");
+        return;
+      }
+      
+      setSession(session);
+      
+      // Fetch user data
+      supabase
+        .from('users')
+        .select('*')
+        .eq('id', session.user.id)
+        .single()
+        .then(({ data, error }) => {
+          if (error) {
+            console.error("Error fetching user data:", error);
+            setUser(session.user);
+          } else {
+            setUser(data || session.user);
+          }
+          setLoading(false);
+        });
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!session) {
+        router.push("/login");
+      } else {
+        setSession(session);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [router]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-950">
+        <div className="text-white">Loading...</div>
+      </div>
+    );
+  }
 
   if (!session) {
-    redirect("/login");
+    return null; // Will redirect to login
   }
 
-  const { data, error } = await supabase
-    .from('users')
-    .select('*')
-    .eq('id', session.user.id)
-    .single();
-
-  if (error) {
-    console.error("Error fetching user data:", error);
-  }
-
-  const user = data || session.user;
   const greeting = new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening";
 
   return (

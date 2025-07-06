@@ -5,14 +5,12 @@ import mapboxgl from 'mapbox-gl';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import * as turf from '@turf/turf';
 import { FeatureCollection, Feature, Polygon, LineString } from 'geojson';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { supabase } from '@/lib/supabaseClient';
 import { WallFeature, FurnitureFeature, RoomFeature, EditorMode } from '../lib/types';
 import { FURNITURE_SIZES, DEFAULT_WALL_WIDTH, WALL_HEIGHT, MAPBOX_STYLE, DEFAULT_CENTER, DEFAULT_ZOOM } from '../lib/constants';
 import { debounce, rotateFeature, capitalise } from '../lib/utils';
 import { url } from 'inspector';
 
-
-const supabase = createClientComponentClient();
 
 export const useEditor = (
 map: React.MutableRefObject<mapboxgl.Map | null>,

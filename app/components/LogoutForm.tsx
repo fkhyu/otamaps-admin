@@ -1,11 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { supabase } from "@/lib/supabaseClient";
 
 export default function LogoutForm() {
   const router = useRouter();
-  const supabase = createClientComponentClient();
 
   async function handleLogout(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

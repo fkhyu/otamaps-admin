@@ -1,8 +1,7 @@
-// app/editor/layout.tsx
+// app/buildings/layout.tsx
 import { Geist, Geist_Mono } from "next/font/google";
 import "../globals.css";
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
+import { supabase } from '@/lib/supabaseClient';
 import { redirect } from "next/navigation";
 
 
@@ -21,14 +20,15 @@ export default async function EditorLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const supabase = createServerComponentClient({ cookies });
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  const { data: { session } } = await supabase.auth.getSession();
+
+  if (!session) {
+    redirect('/login');
+  }
 
   return (
     <div className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-      {session ? children : <div className="flex h-screen w-full items-center justify-center flex-col">Access Denied: Please log in <button onClick={redirect('/login')}>Log in</button></div>}
+      {children}
     </div>
   );
 }
