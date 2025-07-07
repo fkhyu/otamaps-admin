@@ -19,11 +19,11 @@ interface PropertiesPanelProps {
   handleExportGeoJSON: () => void;
   roomFeatures: FeatureCollection;
   wallFeatures: FeatureCollection;
-  poiFeatures: FeatureCollection;
+  // poiFeatures: FeatureCollection;
   setWallFeatures: React.Dispatch<React.SetStateAction<FeatureCollection>>;
   setRoomFeatures: React.Dispatch<React.SetStateAction<FeatureCollection>>;
   setFurnitureFeatures: React.Dispatch<React.SetStateAction<FeatureCollection>>;
-  setPoiFeatures: React.Dispatch<React.SetStateAction<FeatureCollection>>;
+  // setPoiFeatures: React.Dispatch<React.SetStateAction<FeatureCollection>>;
   setSelectedFeatureId: (id: string | null) => void;
   setSelectedFurniture: (furniture: FurnitureFeature | null) => void;
 }
@@ -38,19 +38,19 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   handleExportGeoJSON,
   roomFeatures,
   wallFeatures,
-  poiFeatures,
+  // poiFeatures,
   setWallFeatures,
   setRoomFeatures,
   setFurnitureFeatures,
-  setPoiFeatures,
+  // setPoiFeatures,
   setSelectedFeatureId,
   setSelectedFurniture,
 }) => {
   // Fix the selectedFeature function - remove duplicates and fix logic
-  const selectedFeature = (roomFeatures: FeatureCollection, wallFeatures: FeatureCollection, poiFeatures: FeatureCollection) =>
+  const selectedFeature = (roomFeatures: FeatureCollection, wallFeatures: FeatureCollection) =>
     roomFeatures.features.find((f) => f.id === selectedFeatureId) ||
     wallFeatures.features.find((f) => f.id === selectedFeatureId) ||
-    (poiFeatures?.features?.find((f) => f.id === selectedFeatureId)) ||
+    // (poiFeatures?.features?.find((f) => f.id === selectedFeatureId)) ||
     null;
   const [sessionReady, setSessionReady] = React.useState(false);
 
@@ -92,7 +92,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   }
 
   // Add debug logging
-  console.log('poiFeatures in PropertiesPanel:', poiFeatures);
+  // console.log('poiFeatures in PropertiesPanel:', poiFeatures);
   console.log('selectedFeatureId:', selectedFeatureId);
 
   const checkSession = async () => {
@@ -115,13 +115,13 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">Properties</h2>
       
       {/* Update all selectedFeature calls to include poiFeatures */}
-      {selectedFeatureId && selectedFeature(roomFeatures, wallFeatures, poiFeatures)?.properties?.type === 'room' && (
+      {selectedFeatureId && selectedFeature(roomFeatures, wallFeatures)?.properties?.type === 'room' && (
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
             <input
               type="text"
-              value={selectedFeature(roomFeatures, wallFeatures, poiFeatures)?.properties?.name || ''}
+              value={selectedFeature(roomFeatures, wallFeatures)?.properties?.name || ''}
               onChange={(e) => updateRoomProperties({ name: e.target.value })}
               className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
             />
@@ -130,7 +130,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <label className="block text-sm font-medium text-gray-700 mb-1">Room number</label>
             <input
               type="text"
-              value={selectedFeature(roomFeatures, wallFeatures, poiFeatures)?.properties?.number || ''}
+              value={selectedFeature(roomFeatures, wallFeatures)?.properties?.number || ''}
               onChange={(e) => {
                 const allowed = /^[0-9\/]*$/;
                 if (allowed.test(e.target.value)) {
@@ -151,7 +151,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <select
               name="roomType"
               id=""
-              value={selectedFeature(roomFeatures, wallFeatures, poiFeatures)?.properties?.color || '#EFF2F7'}
+              value={selectedFeature(roomFeatures, wallFeatures)?.properties?.color || '#EFF2F7'}
               onChange={(e) => updateRoomProperties({ color: e.target.value })}
               className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
             >
@@ -166,7 +166,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
               <input
                 type="checkbox"
-                checked={selectedFeature(roomFeatures, wallFeatures, poiFeatures)?.properties?.bookable || false}
+                checked={selectedFeature(roomFeatures, wallFeatures)?.properties?.bookable || false}
                 onChange={(e) => updateRoomProperties({ bookable: e.target.checked })}
                 className="h-4 w-4 text-blue-500"
               />
@@ -177,7 +177,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <label className="block text-sm font-medium text-gray-700 mb-1">Capacity</label>
             <input
               type="number"
-              value={selectedFeature(roomFeatures, wallFeatures, poiFeatures)?.properties?.capacity || 0}
+              value={selectedFeature(roomFeatures, wallFeatures)?.properties?.capacity || 0}
               onChange={(e) => updateRoomProperties({ capacity: Number(e.target.value) })}
               className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
             />
@@ -186,7 +186,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <label className="block text-sm font-medium text-gray-700 mb-1">Purpose</label>
             <input
               type="text"
-              value={selectedFeature(roomFeatures, wallFeatures, poiFeatures)?.properties?.purpose || ''}
+              value={selectedFeature(roomFeatures, wallFeatures)?.properties?.purpose || ''}
               onChange={(e) => updateRoomProperties({ purpose: e.target.value })}
               className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
             />
@@ -194,7 +194,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Geometry</label>
             <textarea
-              value={JSON.stringify(selectedFeature(roomFeatures, wallFeatures, poiFeatures)?.geometry, null, 2)}
+              value={JSON.stringify(selectedFeature(roomFeatures, wallFeatures)?.geometry, null, 2)}
               onChange={async (e) => {
                 try {
                   const newGeometry = JSON.parse(e.target.value);
@@ -350,7 +350,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           </button>
         </div>
       )}
-      {selectedFeatureId && selectedFeature(roomFeatures, wallFeatures, poiFeatures)?.properties?.type === 'wall' && (
+      {selectedFeatureId && selectedFeature(roomFeatures, wallFeatures)?.properties?.type === 'wall' && (
         <button
           onClick={async () => {
             setWallFeatures((prev) => ({
@@ -372,15 +372,15 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         </button>
       )}
       {selectedFeatureId && (() => {
-        const poiFeature = poiFeatures?.features?.find(
-          (f) => f.id === selectedFeatureId
-        );
-        console.log('poiFeature found:', poiFeature);
+        // const poiFeature = poiFeatures?.features?.find(
+        //   (f) => f.id === selectedFeatureId
+        // );
+        // console.log('poiFeature found:', poiFeature);
         
-        if (!poiFeature) return null;
+        // if (!poiFeature) return null;
         return (
           <div className="space-y-4">
-            {poiFeature.properties?.type !== 'event' && (
+            {/* {poiFeature.properties?.type !== 'event' && (
               <div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
@@ -429,10 +429,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 </div>
               </div>
             
-            )}
+            )} */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-              <select
+              {/* <select
                 value={poiFeature.properties?.type || ''}
                 onChange={async (e) => {
                   // Fix: Update POI in poiFeatures, not roomFeatures
@@ -520,9 +520,9 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 <option value="food">Food</option>
                 <option value="view">View</option>
                 <option value="gem">Gem</option>
-              </select>
+              </select> */}
             </div>
-            {poiFeature.properties?.type !== 'event' && (
+            {/* {poiFeature.properties?.type !== 'event' && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Image URL</label>
               <input
@@ -546,10 +546,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            )}
+            )} */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Geometry</label>
-              <textarea
+              {/* <textarea
                 value={JSON.stringify(poiFeature.geometry, null, 2)}
                 onChange={async (e) => {
                   try {
@@ -576,9 +576,9 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   }
                 }}
                 className="w-full h-32 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-              />
+              /> */}
             </div>
-            { poiFeature.properties?.type !== 'event' && (
+            {/* { poiFeature.properties?.type !== 'event' && (
               <button
                 onClick={async () => {
                   // Fix: Update POI in poiFeatures, not roomFeatures
@@ -599,15 +599,15 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               >
                 Delete POI
               </button>
-            )}
-            {poiFeature.properties?.type === 'event' && (
+            )} */}
+            {/* {poiFeature.properties?.type === 'event' && (
               <button
                 className='mt-5 mb-8 w-full bg-blue-600 text-white p-2 rounded-md hover:bg-blue-700 transition font-medium'
                 onClick={() => { window.location.href = `/events?id=${selectedFeatureId}`; }}
               >
                 Modify event
               </button>
-            )}
+            )} */}
           </div>
         );
       })()}

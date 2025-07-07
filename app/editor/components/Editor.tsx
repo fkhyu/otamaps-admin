@@ -21,7 +21,7 @@ const Editor: React.FC = () => {
     wallFeatures,
     roomFeatures,
     furnitureFeatures,
-    poiFeatures,
+    // poiFeatures,
     selectedFeatureId,
     selectedFurniture,
     expandedLayers,
@@ -32,7 +32,7 @@ const Editor: React.FC = () => {
     setWallFeatures,
     setRoomFeatures,
     setFurnitureFeatures,
-    setPoiFeatures,
+    // setPoiFeatures,
     setSelectedFeatureId,
     setSelectedFurniture,
     setExpandedLayers,
@@ -82,12 +82,12 @@ const Editor: React.FC = () => {
         setWallFeatures={setWallFeatures}
         setRoomFeatures={setRoomFeatures}
         setFurnitureFeatures={setFurnitureFeatures}
-        setPoiFeatures={setPoiFeatures}
+        // setPoiFeatures={setPoiFeatures}
         setSelectedFeatureId={setSelectedFeatureId}
         setSelectedFurniture={setSelectedFurniture}
         roomFeatures={roomFeatures}
         wallFeatures={wallFeatures}
-        poiFeatures={poiFeatures}
+        // poiFeatures={poiFeatures}
       />
       <FurnitureToolbar mode={mode} />
     </div>
