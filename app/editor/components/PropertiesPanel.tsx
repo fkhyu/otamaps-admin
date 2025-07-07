@@ -1,9 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { FeatureCollection, Feature } from 'geojson';
 import { RoomFeature, FurnitureFeature } from '../lib/types';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClientComponentClient();
 
@@ -51,10 +52,63 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     wallFeatures.features.find((f) => f.id === selectedFeatureId) ||
     (poiFeatures?.features?.find((f) => f.id === selectedFeatureId)) ||
     null;
+  const [sessionReady, setSessionReady] = React.useState(false);
+
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) {
+        console.error('Error fetching session:', error);
+        return;
+      }
+      if (!session) {
+        console.error('No active session found');
+        return;
+      }
+      // console.log('Session user:', session);
+      setSessionReady(true);
+    }
+
+    checkSession();
+  }, []);
+
+  const handleRoomDelete = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      console.error('No active session found');
+      return;
+    }
+
+    const { error } = await supabase
+      .from('rooms')
+      .delete()
+      .eq('id', selectedFeatureId);
+
+    if (error) {
+      console.error('Error deleting room:', error);
+    } else {
+      console.log('Room deleted successfully');
+    }
+  }
 
   // Add debug logging
   console.log('poiFeatures in PropertiesPanel:', poiFeatures);
   console.log('selectedFeatureId:', selectedFeatureId);
+
+  const checkSession = async () => {
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error) {
+      console.error('Error fetching session:', error);
+      return null;
+    }
+    if (!session) {
+      console.error('No active session found');
+      return null;
+    }
+    // console.log('Session user:', session);
+  };
+
+  checkSession();
 
   return (
     <div className="w-64 bg-white dark:bg-gray-900 shadow-md p-4 overflow-y-auto">
@@ -87,13 +141,26 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
-            <input
+            <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+            {/* <input
               type="color"
               value={selectedFeature(roomFeatures, wallFeatures, poiFeatures)?.properties?.color || '#ff0000'}
               onChange={(e) => updateRoomProperties({ color: e.target.value })}
               className="w-full h-10 border border-gray-300 rounded-md"
-            />
+            /> */}
+            <select
+              name="roomType"
+              id=""
+              value={selectedFeature(roomFeatures, wallFeatures, poiFeatures)?.properties?.color || '#EFF2F7'}
+              onChange={(e) => updateRoomProperties({ color: e.target.value })}
+              className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="#EFF2F7">Luokka</option>
+              <option value="#EFF2F7">Tila</option>
+              <option value="#F7FAFE">Alue</option>
+              <option value="#F7FAFE">Käytävä</option>
+              <option value="#E7F0FF">Vessa/Special (sininen)</option>
+            </select>
           </div>
           <div>
             <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
@@ -152,19 +219,41 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             />
           </div>
           <button
+            disabled={!sessionReady}
             onClick={async () => {
               setRoomFeatures((prev) => ({
                 ...prev,
                 features: prev.features.filter((f) => f.id !== selectedFeatureId),
               }));
               setSelectedFeatureId(null);
+              
               const { error } = await supabase
                 .from('rooms')
                 .delete()
                 .eq('id', selectedFeatureId);
               if (error) {
                 console.error('Error deleting room:', error);
+              } else {
+                console.log('Room deleted successfully');
               }
+              // Also delete all furniture associated with this room
+              setFurnitureFeatures((prev) => ({
+                ...prev,
+                features: prev.features.filter((f) => f.properties?.for !== selectedFeatureId),
+              }));
+              // // delete all furniture that has a 'for' value same as deleted room_id
+              // const { error: furnitureError } = await supabase
+              //   .from('furniture')
+              //   .delete()
+              //   .eq('for', selectedFeatureId);
+              // if (furnitureError) {
+              //   console.error('Error deleting furniture:', furnitureError);
+              // }
+              // Also delete all walls associated with this room
+              setWallFeatures((prev) => ({
+                ...prev,
+                features: prev.features.filter((f) => f.properties?.for !== selectedFeatureId),
+              }));
               // delete all walls that have a 'for' value same as deleted room_id
               const { error: wallError } = await supabase
                 .from('features')
@@ -173,18 +262,18 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               if (wallError) {
                 console.error('Error deleting walls:', wallError);
               }
-              // update wall features on map
-              console.log(wallFeatures.features.find((f) => f.properties?.for === selectedFeatureId));
-              const { data } = await supabase
-                .from('features')
-                .select('*')
+              // update wall features on map 
+              // console.log(wallFeatures.features.find((f) => f.properties?.for === selectedFeatureId));
+              // const { data } = await supabase
+              //   .from('features')
+              //   .select('*')
 
-              if (data) {
-                setWallFeatures({
-                  type: 'FeatureCollection',
-                  features: data as Feature[]
-                });
-              }
+              // if (data) {
+              //   setWallFeatures({
+              //     type: 'FeatureCollection',
+              //     features: data as Feature[]
+              //   });
+              // }
             }}
             className="mt-5 mb-8 w-full bg-red-600 text-white p-2 rounded-md hover:bg-red-700 transition font-medium"
           >

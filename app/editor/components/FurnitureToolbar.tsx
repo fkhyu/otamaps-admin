@@ -29,7 +29,7 @@ export const FurnitureToolbar: React.FC<FurnitureToolbarProps> = ({ mode }) => {
           </div>
         )}
       </div>
-      <div className=" bg-white dark:bg-gray-700 dark:border-1 dark:border-gray-600 shadow-lg p-4 flex items-center gap-4 overflow-x-auto w-fit rounded-2xl mx-auto mb-4  z-[9999999999]">
+      {/* <div className=" bg-white dark:bg-gray-700 dark:border-1 dark:border-gray-600 shadow-lg p-4 flex items-center gap-4 overflow-x-auto w-fit rounded-2xl mx-auto mb-4  z-[9999999999]">
           <div className="flex items-center gap-3">
               <div
                 draggable
@@ -44,7 +44,7 @@ export const FurnitureToolbar: React.FC<FurnitureToolbarProps> = ({ mode }) => {
                 <span className="text-sm">POI</span>
               </div>
           </div>
-      </div>
+      </div> */}
     </div>
   );
 };

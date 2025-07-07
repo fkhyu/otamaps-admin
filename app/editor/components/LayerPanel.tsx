@@ -32,6 +32,8 @@ export const LayerPanel: React.FC<LayerPanelProps> = ({
 }) => {
   const [buttonLabel, setButtonLabel] = useState('Go to SF');
 
+  console.log('LayerPanel rendered with wallFeatures:', roomFeatures);
+
   return (
     <div className="w-64 bg-white dark:bg-gray-900 shadow-md p-4 overflow-y-auto">
       <button 
