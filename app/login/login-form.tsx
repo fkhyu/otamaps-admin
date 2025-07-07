@@ -102,14 +102,14 @@ export default function LoginForm() {
           </button>
         </form>
 
-        <div className="mt-4 text-center">
+        {/* <div className="mt-4 text-center">
           <button
             onClick={() => setIsSignUp(!isSignUp)}
             className="text-blue-400 hover:text-blue-300 text-sm"
           >
             {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
           </button>
-        </div>
+        </div> */}
       </div>
     </div>
   );
