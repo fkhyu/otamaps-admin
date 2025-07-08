@@ -1,3 +1,4 @@
+// app/editor/lib/constants.ts
 import { FurnitureItem } from './types';
 
 export const DEFAULT_CENTER: [number, number] = [24.8182, 60.1842];
@@ -16,8 +17,3 @@ export const furnitureLibrary: FurnitureItem[] = [
   { id: 'chair', name: 'Chair', icon: '🪑', shape: 'cylinder' },
   { id: 'table', name: 'Table', icon: '🪵', shape: 'cube' },
 ];
-
-export const MAPBOX_STYLE =
-  typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches
-    ? 'mapbox://styles/mapbox/dark-v10'
-    : 'mapbox://styles/mapbox/streets-v12';

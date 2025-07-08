@@ -7,9 +7,8 @@ import * as turf from '@turf/turf';
 import { FeatureCollection, Feature, Polygon, LineString } from 'geojson';
 import { supabase } from '@/lib/supabaseClient';
 import { WallFeature, FurnitureFeature, RoomFeature, EditorMode } from '../lib/types';
-import { FURNITURE_SIZES, DEFAULT_WALL_WIDTH, WALL_HEIGHT, MAPBOX_STYLE, DEFAULT_CENTER, DEFAULT_ZOOM } from '../lib/constants';
-import { debounce, rotateFeature, capitalise } from '../lib/utils';
-import { url } from 'inspector';
+import { FURNITURE_SIZES, DEFAULT_WALL_WIDTH, WALL_HEIGHT, DEFAULT_CENTER, DEFAULT_ZOOM } from '../lib/constants';
+import { debounce, rotateFeature } from '../lib/utils';
 
 
 export const useEditor = (
@@ -39,6 +38,7 @@ const [expandedLayers, setExpandedLayers] = useState<{ [key: string]: boolean }>
 const [mapLoaded, setMapLoaded] = useState(false);
 const [dataLoaded, setDataLoaded] = useState(false);
 const [rotationInput, setRotationInput] = useState<number>(0);
+const [isSatellite, setIsSatellite] = useState(false);
 
 const generateUniqueId = () => crypto.randomUUID();
 
@@ -49,6 +49,12 @@ const selectedFeature = useMemo(() => {
     null
     );
 }, [roomFeatures, wallFeatures, selectedFeatureId]);
+
+const MAPBOX_STYLE = useMemo(() => {
+    return typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches
+      ? isSatellite ? 'mapbox://styles/mapbox/satellite-v9' : 'mapbox://styles/mapbox/dark-v10'
+      : isSatellite ? 'mapbox://styles/mapbox/satellite-v9' : 'mapbox://styles/mapbox/streets-v12';
+  }, [isSatellite]);
 
 // Initialize Map
 const initializeMapLayers = useCallback(() => {
@@ -354,12 +360,12 @@ useEffect(() => {
     });
 
     const styleOptions = [
-        { label: '🗺️', style: MAPBOX_STYLE, explanation: "default" },
-        { label: '🛰️', style: 'mapbox://styles/mapbox/satellite-v9', explanation: "satellite" },
+        { label: '🗺️', explanation: "default", style: 'default' },
+        { label: '🛰️', explanation: "satellite", style: 'satellite' },
     ];
 
     class StyleSwitcherControl {
-        private styles: { label: string; style: string; explanation: string }[];
+        private styles: { label: string; explanation: string; style: string }[];
         private map: mapboxgl.Map | null = null;
         private container: HTMLDivElement | null = null;
 
@@ -371,17 +377,21 @@ useEffect(() => {
             this.map = map;
             this.container = document.createElement('div');
             this.container.className = 'mapboxgl-ctrl mapboxgl-ctrl-group';
-            this.container.style.display = 'flex';
+            this.container.style.display = 'flex flex-col';
             this.container.style.flexDirection = 'row';
 
-            this.styles.forEach(({ label, style, explanation }) => {
+            this.styles.forEach(({ label, explanation, style }) => {
                 const button = document.createElement('button');
                 button.type = 'button';
                 button.textContent = label;
                 button.title = `Switch to ${explanation}`;
                 button.onclick = () => {
-                    if (this.map) {
-                        this.map.setStyle(style);
+                    if (style === "satellite") {
+                        setIsSatellite(true);
+                        console.log("Satellite", isSatellite)
+                    } else {
+                        setIsSatellite(false);
+                        console.log("Streets", isSatellite)
                     }
                 };
                 this.container!.appendChild(button);
@@ -1050,8 +1060,8 @@ const setRoomMarkers = useCallback((map: mapboxgl.Map, room: RoomFeature | null)
     el.title = `${room.properties.name} - Corner ${idx + 1}`;
 
     const marker = new mapboxgl.Marker({ element: el, draggable: true })
-    .setLngLat([lng, lat])
-    .addTo(map);
+        .setLngLat([lng, lat])
+        .addTo(map);
 
     marker.on('drag', () => {
     const lngLat = marker.getLngLat();
@@ -2183,6 +2193,8 @@ useEffect(() => {
         updateRoomProperties,
         initializeMapLayers,
         deleteRoom,
+        isSatellite,
+        setIsSatellite,
+        MAPBOX_STYLE,
     };
 };
-

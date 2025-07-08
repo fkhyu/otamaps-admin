@@ -10,6 +10,8 @@ import { PropertiesPanel } from './PropertiesPanel';
 import { FurnitureToolbar } from './FurnitureToolbar';
 import { useEditor } from '../hooks/useEditor';
 import { DEFAULT_CENTER, DEFAULT_ZOOM } from '../lib/constants';
+import { useEditorState } from '../hooks/useEditorState';
+
 
 const Editor: React.FC = () => {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -51,6 +53,9 @@ const Editor: React.FC = () => {
     updateFurnitureProperties,
     updateRoomProperties,
     initializeMapLayers,
+    MAPBOX_STYLE,
+    isSatellite,
+    setIsSatellite,
   } = useEditor(map, draw, mapContainer);
 
   return (
