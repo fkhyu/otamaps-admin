@@ -259,7 +259,7 @@ const initializeMapLayers = useCallback(() => {
         },
         }, 'furniture');
     }
-}, []);
+}, [isSatellite]);
 
 useEffect(() => {
     if (map.current && map.current.getSource('walls') && map.current.isStyleLoaded()) {
@@ -388,10 +388,8 @@ useEffect(() => {
                 button.onclick = () => {
                     if (style === "satellite") {
                         setIsSatellite(true);
-                        console.log("Satellite", isSatellite)
                     } else {
                         setIsSatellite(false);
-                        console.log("Streets", isSatellite)
                     }
                 };
                 this.container!.appendChild(button);
@@ -587,7 +585,7 @@ useEffect(() => {
             id: item.id,
             type: 'room',
             name: item.title || 'Unnamed Room',
-            number: item.room_number || `R${item.id}`,
+            number: item.room_number || null,
             color: item.color || '#ff0000',
             bookable: item.bookable || false,
             capacity: item.seats || 0,
@@ -2150,7 +2148,7 @@ useEffect(() => {
         mapContainer.current?.removeEventListener('drop', handleNativeDrop as unknown as EventListener);
         mapContainer.current?.removeEventListener('dragover', (e) => e.preventDefault());
     };
-}, [handleMapClick, handleFurnitureMouseDown, handleDrawCreate, handleDrawUpdate, handleNativeDrop, mapContainer]);
+}, [handleMapClick, handleFurnitureMouseDown, handleDrawCreate, handleDrawUpdate, handleNativeDrop, mapContainer, isSatellite]);
 
     return {
         mode,

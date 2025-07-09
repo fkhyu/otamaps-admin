@@ -35,8 +35,8 @@ export const LayerPanel: React.FC<LayerPanelProps> = ({
   console.log('LayerPanel rendered with wallFeatures:', roomFeatures);
 
   return (
-    <div className="w-64 bg-white dark:bg-gray-900 shadow-md p-4 overflow-y-auto">
-      <button 
+    <div className="w-[20%] min-w-64 bg-white dark:bg-gray-900 shadow-md p-4 overflow-y-auto">
+      {/* <button 
         className='bg-[#E78F4A] text-white py-3 w-full rounded-xl mb-10 font-semibold text-2xl'
         id='goToSF'
         aria-label="Go to San Francisco"
@@ -54,7 +54,7 @@ export const LayerPanel: React.FC<LayerPanelProps> = ({
         }}
       >
         {buttonLabel}
-      </button>
+      </button> */}
       <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">Layers</h2>
       <div className="mb-2">
         <div
@@ -96,14 +96,17 @@ export const LayerPanel: React.FC<LayerPanelProps> = ({
               roomFeatures.features.map((feature) => (
                 <div
                   key={feature.id}
-                  className={`p-2 text-sm cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800 rounded flex flex-row justify-between items-center ${
+                  className={`p-2 pl-1 text-sm cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800 rounded flex flex-row justify-between items-center ${
                     selectedFeatureId === feature.id ? 'bg-blue-100 dark:bg-blue-950' : ''
                   }`}
-                  onClick={() => handleLayerSelect(feature)}
+                  onClick={() => {handleLayerSelect(feature); console.log(roomFeatures)}}
                 >
-                  {feature.properties?.name || `Room ${roomFeatures.features.indexOf(feature) + 1}`}
+                  <div className="flex flex-row items-center gap-2">
+                    <div style={{ backgroundColor: feature.properties?.color + '90', border: '1px solid ' + feature.properties?.color }} className="flex w-6 h-6 rounded-lg"/>
+                    {feature.properties ?.number ? `${feature.properties ?.name} (${feature.properties?.number})` : feature.properties ?.name || `Room ${roomFeatures.features.indexOf(feature) + 1}`}
+                  </div>
                   { !feature.properties?.wallified && (
-                    <button
+                    <button 
                       onClick={() => {
                         if (!feature.properties?.wallified) {
                           autofillWalls(

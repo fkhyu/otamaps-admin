@@ -123,7 +123,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               type="text"
               value={selectedFeature(roomFeatures, wallFeatures)?.properties?.name || ''}
               onChange={(e) => updateRoomProperties({ name: e.target.value })}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+              className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:focus:ring-blue-500"
             />
           </div>
           <div>
@@ -137,7 +137,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   updateRoomProperties({ number: e.target.value });
                 }
               }}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none dark:border-gray-600 dark:focus:ring-blue-500"
             />
           </div>
           <div>
@@ -153,7 +153,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               id=""
               value={selectedFeature(roomFeatures, wallFeatures)?.properties?.color || '#EFF2F7'}
               onChange={(e) => updateRoomProperties({ color: e.target.value })}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+              className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100"
             >
               <option value="#EFF2F7">Luokka</option>
               <option value="#EFF2F7">Tila</option>
@@ -179,7 +179,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               type="number"
               value={selectedFeature(roomFeatures, wallFeatures)?.properties?.capacity || 0}
               onChange={(e) => updateRoomProperties({ capacity: Number(e.target.value) })}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+              className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 dark:focus:ring-blue-500"
             />
           </div>
           <div>
@@ -188,7 +188,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               type="text"
               value={selectedFeature(roomFeatures, wallFeatures)?.properties?.purpose || ''}
               onChange={(e) => updateRoomProperties({ purpose: e.target.value })}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+              className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 dark:focus:ring-blue-500"
             />
           </div>
           <div>
@@ -215,7 +215,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   console.error('Invalid JSON for geometry:', err);
                 }
               }}
-              className="w-full h-32 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+              className="w-full h-32 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 dark:focus:ring-blue-500 "
             />
           </div>
           <button
@@ -431,7 +431,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             
             )} */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+              {/* <label className="block text-sm font-medium text-gray-700 mb-1">Type</label> */}
               {/* <select
                 value={poiFeature.properties?.type || ''}
                 onChange={async (e) => {
@@ -548,7 +548,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             </div>
             )} */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Geometry</label>
+              {/* <label className="block text-sm font-medium text-gray-700 mb-1">Geometry</label> */}
               {/* <textarea
                 value={JSON.stringify(poiFeature.geometry, null, 2)}
                 onChange={async (e) => {
